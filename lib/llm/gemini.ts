@@ -82,7 +82,10 @@ export class GeminiProvider implements LLMProvider {
           config: {
             systemInstruction,
             temperature: options.temperature ?? 0.5,
-            maxOutputTokens: options.maxOutputTokens ?? 200,
+            maxOutputTokens: options.maxOutputTokens ?? 1024,
+            thinkingConfig: {
+              thinkingBudget: 0,
+            },
           },
         });
 
@@ -141,7 +144,10 @@ export class GeminiProvider implements LLMProvider {
           config: {
             systemInstruction,
             temperature: options.temperature ?? 0.5,
-            maxOutputTokens: options.maxOutputTokens ?? 200,
+            maxOutputTokens: options.maxOutputTokens ?? 1024,
+            thinkingConfig: {
+              thinkingBudget: 0,
+            },
           },
         });
 
@@ -160,7 +166,11 @@ export class GeminiProvider implements LLMProvider {
           `[LLM:Gemini TTFT] First token from ${model} arrived in ${firstTokenTime}ms`
         );
 
+        let lastFinishReason: string | undefined;
         if (!firstChunkResult.done && firstChunkResult.value) {
+          if (firstChunkResult.value.candidates?.[0]?.finishReason) {
+            lastFinishReason = firstChunkResult.value.candidates[0].finishReason;
+          }
           if (firstChunkResult.value.text) {
             fullText += firstChunkResult.value.text;
             options.onChunk(firstChunkResult.value.text);
@@ -172,6 +182,9 @@ export class GeminiProvider implements LLMProvider {
           const { value, done } = await iterator.next();
           if (done) break;
 
+          if (value?.candidates?.[0]?.finishReason) {
+            lastFinishReason = value.candidates[0].finishReason;
+          }
           if (value.text) {
             fullText += value.text;
             options.onChunk(value.text);
@@ -180,7 +193,7 @@ export class GeminiProvider implements LLMProvider {
 
         const totalTime = Date.now() - startTime;
         console.log(
-          `[LLM:Gemini Stream Done] Completed from ${model} in ${totalTime}ms (Total chars: ${fullText.length})`
+          `[LLM:Gemini Stream Done] Completed from ${model} in ${totalTime}ms (Total chars: ${fullText.length}, Finish Reason: ${lastFinishReason || 'STOP'})`
         );
 
         if (fullText.length > 0) {
