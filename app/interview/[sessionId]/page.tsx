@@ -367,6 +367,10 @@ export default function InterviewSessionPage() {
               // Auto-conclude session on frontend if AI signaled end
               if (data.isSessionEnded) {
                 setSession((prev) => (prev ? { ...prev, status: "COMPLETED" } : null));
+                const delay = modalityRef.current === "VOICE" ? 3500 : 1200;
+                setTimeout(() => {
+                  handleEndInterview();
+                }, delay);
               }
 
               // Voice playback if in VOICE modality
@@ -397,6 +401,10 @@ export default function InterviewSessionPage() {
         setMessages((prev) => [...prev, finalAssistantMsg]);
         if (isEnded) {
           setSession((prev) => (prev ? { ...prev, status: "COMPLETED" } : null));
+          const delay = modalityRef.current === "VOICE" ? 3500 : 1200;
+          setTimeout(() => {
+            handleEndInterview();
+          }, delay);
         }
         if (modalityRef.current === "VOICE") {
           voiceSessionRef.current?.speak(cleanContent, finalAssistantMsg.id);
@@ -737,13 +745,18 @@ export default function InterviewSessionPage() {
                 Your full interview transcript has been archived. You can review your history or begin a new round.
               </p>
               <div className="flex justify-center gap-3 pt-2">
+                <Link href={`/interview/${sessionId}/report`}>
+                  <Button size="sm" className="text-xs bg-primary text-white hover:opacity-90">
+                    View Performance Report
+                  </Button>
+                </Link>
                 <Link href="/dashboard">
                   <Button variant="outline" size="sm" className="text-xs">
                     View Dashboard
                   </Button>
                 </Link>
                 <Link href="/interview">
-                  <Button size="sm" className="text-xs">
+                  <Button variant="outline" size="sm" className="text-xs">
                     Start New Interview
                   </Button>
                 </Link>
