@@ -172,25 +172,35 @@ export class TextToSpeechEngine {
     }
   }
 
+  public getIsSpeaking(): boolean {
+    return this.isSpeaking;
+  }
+
   /**
    * Immediately stops any active voice playback.
    */
-  public stop() {
-    if (!this.isSupported()) return;
+  public stop(): void {
+    const wasSpeaking = this.isSpeaking;
 
-    try {
-      if (this.currentUtterance) {
-        this.currentUtterance.onstart = null;
-        this.currentUtterance.onend = null;
-        this.currentUtterance.onerror = null;
+    if (this.isSupported()) {
+      try {
+        if (this.currentUtterance) {
+          this.currentUtterance.onstart = null;
+          this.currentUtterance.onend = null;
+          this.currentUtterance.onerror = null;
+        }
+        window.speechSynthesis.cancel();
+      } catch {
+        // Ignore
       }
-      window.speechSynthesis.cancel();
-    } catch {
-      // Ignore
     }
 
     this.isSpeaking = false;
     this.currentUtterance = null;
+
+    if (wasSpeaking) {
+      this.callbacks.onInterrupted?.();
+    }
     this.callbacks.onEnd?.();
   }
 

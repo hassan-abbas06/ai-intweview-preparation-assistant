@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma, SynthesisStatus } from "@prisma/client";
 import { z } from "zod";
-import { getLLMProvider, extractLLMErrorMessage } from "@/lib/llm";
+import { getLLMProvider, extractLLMErrorMessage, LLMProvider } from "@/lib/llm";
 import { DeterministicReportPayload, PillarReportItem } from "./report-generator";
 
 // ============================================================================
@@ -44,6 +44,7 @@ export type SynthesisTip = z.infer<typeof SynthesisTipSchema>;
 export interface SynthesisOptions {
   forceRefresh?: boolean;
   timeoutMs?: number;
+  llmProvider?: LLMProvider;
 }
 
 export interface SynthesisResult {
@@ -232,14 +233,21 @@ export class ReportSynthesizerService {
     }
 
     // 4. Mark Status: SYNTHESIS_GENERATING
-    await prismaClient.interviewReport.update({
-      where: { id: report.id },
-      data: {
-        synthesisStatus: "SYNTHESIS_GENERATING",
-        synthesisError: null,
-        synthesisUpdatedAt: new Date(),
-      },
-    });
+    try {
+      await prismaClient.interviewReport.update({
+        where: { id: report.id },
+        data: {
+          synthesisStatus: "SYNTHESIS_GENERATING",
+          synthesisError: null,
+          synthesisUpdatedAt: new Date(),
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === "P2025") {
+        throw new Error(`Interview report ${report.id} not found: deleted before synthesis.`);
+      }
+      throw err;
+    }
 
     // 5. Handle APTITUDE Track: 100% Deterministic Synthesis (Zero Conversational LLM)
     if (session.type === "APTITUDE") {
@@ -323,7 +331,7 @@ export class ReportSynthesizerService {
     // 8. Execute LLM Synthesis with Grounded Prompt & Provider Fallback
     try {
       const prompt = this.buildSynthesisPrompt(session, report, candidateTurnsMap);
-      const provider = getLLMProvider();
+      const provider = options.llmProvider || getLLMProvider();
 
       let timeoutHandle: NodeJS.Timeout | null = null;
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -385,14 +393,20 @@ export class ReportSynthesizerService {
       console.error(`[Synthesis Error - Session ${sessionId}]:`, errorMsg);
 
       // 12. Failure Isolation: Persist SYNTHESIS_FAILED without corrupting deterministic report
-      await prismaClient.interviewReport.update({
-        where: { id: report.id },
-        data: {
-          synthesisStatus: "SYNTHESIS_FAILED",
-          synthesisError: errorMsg,
-          synthesisUpdatedAt: new Date(),
-        },
-      });
+      try {
+        await prismaClient.interviewReport.update({
+          where: { id: report.id },
+          data: {
+            synthesisStatus: "SYNTHESIS_FAILED",
+            synthesisError: errorMsg,
+            synthesisUpdatedAt: new Date(),
+          },
+        });
+      } catch (dbErr: any) {
+        if (dbErr?.code !== "P2025") {
+          console.error(`[Synthesis Failure Record Update Error]:`, dbErr);
+        }
+      }
 
       return {
         sessionId,
@@ -631,23 +645,30 @@ Output strictly a JSON object with this exact structure:
     modelName: string,
     prismaClient: typeof prisma | Prisma.TransactionClient
   ): Promise<void> {
-    await prismaClient.interviewReport.update({
-      where: { id: reportId },
-      data: {
-        synthesisStatus: "SYNTHESIS_READY",
-        executiveSummary: synthesis.executiveSummary,
-        structuredStrengths: synthesis.strengths as any,
-        structuredWeaknesses: synthesis.weaknesses as any,
-        structuredTips: synthesis.actionableTips as any,
-        strengths: synthesis.strengths.map((s) => s.title) as any,
-        weaknesses: synthesis.weaknesses.map((w) => w.title) as any,
-        tips: synthesis.actionableTips.map((t) => `${t.area}: ${t.specificAction}`) as any,
-        synthesisModel: modelName,
-        synthesisPromptVersion: this.PROMPT_VERSION,
-        synthesisCreatedAt: new Date(),
-        synthesisUpdatedAt: new Date(),
-        synthesisError: null,
-      },
-    });
+    try {
+      await prismaClient.interviewReport.update({
+        where: { id: reportId },
+        data: {
+          synthesisStatus: "SYNTHESIS_READY",
+          executiveSummary: synthesis.executiveSummary,
+          structuredStrengths: synthesis.strengths as any,
+          structuredWeaknesses: synthesis.weaknesses as any,
+          structuredTips: synthesis.actionableTips as any,
+          strengths: synthesis.strengths.map((s) => s.title) as any,
+          weaknesses: synthesis.weaknesses.map((w) => w.title) as any,
+          tips: synthesis.actionableTips.map((t) => `${t.area}: ${t.specificAction}`) as any,
+          synthesisModel: modelName,
+          synthesisPromptVersion: this.PROMPT_VERSION,
+          synthesisCreatedAt: new Date(),
+          synthesisUpdatedAt: new Date(),
+          synthesisError: null,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === "P2025") {
+        return; // Report was deleted before synthesis could be persisted
+      }
+      throw err;
+    }
   }
 }

@@ -65,10 +65,16 @@ export function VoiceStatusBar({
                   Processing answer...
                 </span>
               )}
-              {voiceState === "SPEAKING" && (
+              {(voiceState === "AI_SPEAKING" || voiceState === "SPEAKING") && (
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-success animate-pulse">
                   <Volume2 className="w-3.5 h-3.5" />
-                  Interviewer speaking...
+                  Interviewer speaking... (speak to interrupt)
+                </span>
+              )}
+              {voiceState === "INTERRUPTED" && (
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-warning animate-pulse">
+                  <Radio className="w-3.5 h-3.5 text-warning" />
+                  Interrupted! Listening to your answer...
                 </span>
               )}
               {voiceState === "IDLE" && (
@@ -86,7 +92,7 @@ export function VoiceStatusBar({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
-          {isVoice && voiceState === "SPEAKING" && (
+          {isVoice && (voiceState === "AI_SPEAKING" || voiceState === "SPEAKING") && (
             <Button
               type="button"
               variant="outline"

@@ -44,6 +44,9 @@ export interface InterviewState {
   // Raw conversation history
   messages: InterviewTurnMessage[];
 
+  // Phase 6: Cross-Session Anti-Repetition History
+  crossSessionAskedQuestions?: string[];
+
   // Phase 3C: Optional Session Mastery State
   masteryState?: any;
 }
@@ -335,6 +338,7 @@ export function buildInterviewState(
     masteryState?: any;
     modality?: InterviewModality;
     status: SessionStatus;
+    crossSessionAskedQuestions?: string[];
     messages: { role: string; content: string; createdAt?: Date | string }[];
   },
   currentCandidateMessage?: string
@@ -389,6 +393,7 @@ export function buildInterviewState(
     isIntroTurn,
     isCandidateEnding,
     candidateMemory,
+    crossSessionAskedQuestions: sessionData.crossSessionAskedQuestions || [],
     messages: allMessages,
   };
 }
@@ -397,13 +402,28 @@ export function buildInterviewState(
  * Generates compact memory context strings for prompt injection
  */
 export function getPromptMemoryContext(state: InterviewState): PromptMemoryContext {
-  // 1. Previous Questions Block (anti-repetition)
-  const previousQuestionsBlock =
-    state.askedQuestions.length > 0
-      ? `\nPREVIOUS QUESTIONS ASKED IN THIS SESSION (DO NOT REPEAT):\n${state.askedQuestions
-          .map((q, idx) => `  ${idx + 1}. "${q.replace(/\s+/g, " ").slice(0, 140)}..."`)
-          .join("\n")}\n- STRICT RULE: Never repeat, re-ask, or closely rephrase any question from the list above. Always explore a fresh topic or deeper technical tradeoff.\n`
-      : "";
+  // 1. Previous Questions Block (anti-repetition: within-session and cross-session)
+  const withinSession = state.askedQuestions || [];
+  const crossSession = state.crossSessionAskedQuestions || [];
+
+  let previousQuestionsBlock = "";
+  if (withinSession.length > 0 || crossSession.length > 0) {
+    const lines: string[] = [];
+    if (withinSession.length > 0) {
+      lines.push("PREVIOUS QUESTIONS ASKED IN THIS SESSION (DO NOT REPEAT):");
+      withinSession.forEach((q, idx) => {
+        lines.push(`  ${idx + 1}. "${q.replace(/\s+/g, " ").slice(0, 140)}..."`);
+      });
+    }
+    if (crossSession.length > 0) {
+      lines.push("\nQUESTIONS PREVIOUSLY ASKED IN PAST SESSIONS (DO NOT REPEAT):");
+      crossSession.slice(0, 8).forEach((q, idx) => {
+        lines.push(`  • "${q.replace(/\s+/g, " ").slice(0, 140)}..."`);
+      });
+    }
+    lines.push("- STRICT RULE: Never repeat, re-ask, or closely rephrase any question from the list above. Always explore a fresh topic or deeper technical tradeoff.");
+    previousQuestionsBlock = `\n${lines.join("\n")}\n`;
+  }
 
   // 2. Candidate Memory Block (facts, skills, background)
   const mem = state.candidateMemory;

@@ -118,6 +118,19 @@ async function runPhase4Tests() {
     },
   });
 
+  // Clean up any lingering sessions/jobs from previous interrupted runs for this test user
+  const oldSessions = await prisma.interviewSession.findMany({
+    where: { userId: testUser.id },
+    select: { id: true },
+  });
+  if (oldSessions.length > 0) {
+    const oldSessionIds = oldSessions.map((s) => s.id);
+    await prisma.evaluationJob.deleteMany({ where: { sessionId: { in: oldSessionIds } } });
+    await prisma.interviewReport.deleteMany({ where: { sessionId: { in: oldSessionIds } } });
+    await prisma.interviewMessage.deleteMany({ where: { sessionId: { in: oldSessionIds } } });
+    await prisma.interviewSession.deleteMany({ where: { id: { in: oldSessionIds } } });
+  }
+
   const testSession = await prisma.interviewSession.create({
     data: {
       userId: testUser.id,
@@ -761,7 +774,7 @@ async function runPhase4Tests() {
         status: "PENDING",
       },
     });
-    const claimedC1 = (await EvaluationWorker.claimNextJob())!;
+    const claimedC1 = (await EvaluationWorker.claimNextJob({ sessionId: consistencySession.id }))!;
     await EvaluationWorker.processJob(claimedC1, { llmProvider: mockHighProvider });
 
     const cJob2 = await prisma.evaluationJob.create({
@@ -775,7 +788,7 @@ async function runPhase4Tests() {
         status: "PENDING",
       },
     });
-    const claimedC2 = (await EvaluationWorker.claimNextJob())!;
+    const claimedC2 = (await EvaluationWorker.claimNextJob({ sessionId: consistencySession.id }))!;
     await EvaluationWorker.processJob(claimedC2, { llmProvider: mockHighProvider });
 
     const persistedSession = (await prisma.interviewSession.findUnique({

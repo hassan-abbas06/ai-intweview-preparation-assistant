@@ -1,6 +1,7 @@
 import { InterviewType } from "@prisma/client";
 import { getDomainLabel } from "@/lib/constants/domains";
 import { getPersonaForInterview } from "./personas";
+import { getScenarioDiversificationGuidelines } from "./question-diversity";
 import {
   InterviewState,
   getPromptMemoryContext,
@@ -205,27 +206,36 @@ export function buildSystemPrompt(params: BuildPromptParams): string {
     }
   }
 
-  // If explicit Orchestrator Decision is provided, it takes precedence for the live turn directive
   if (params.decision) {
-    const kw =
-      params.decision.groundingKeywords && params.decision.groundingKeywords.length > 0
-        ? `\nCore Pillar Focus: ${params.decision.groundingKeywords.join(", ")}`
-        : "";
-
+    const kw = params.decision.groundingKeywords && params.decision.groundingKeywords.length > 0
+      ? `\n- Target concepts to probe: ${params.decision.groundingKeywords.join(", ")}`
+      : "";
     liveDirectiveSection = `⚡ ORCHESTRATOR DIRECTIVE [Action: ${params.decision.action} | Reason: ${params.decision.reasonCode} | Target Pillar: ${params.decision.targetPillarName}]:\n- ${params.decision.directiveInstruction}${kw}`;
+  }
+
+  // Phase 6: Scenario Diversification Guidance
+  let scenarioDiversificationSection = "";
+  if (params.decision && params.decision.action !== "CONCLUDE_ROUND" && params.decision.action !== "HANDLE_GREETING") {
+    const targetPillarIndex = params.decision.targetPillarIndex ?? 0;
+    scenarioDiversificationSection = `\n${getScenarioDiversificationGuidelines(
+      targetPillarIndex,
+      params.decision.targetPillarName,
+      domain,
+      difficulty
+    )}\n`;
   }
 
   return `
 You are ${persona.name}, ${persona.role} (${persona.yearsExperience} yrs exp).
 Background: ${persona.background}
 Style: ${persona.style}
-${candidateMemorySection}${topicsCoveredSection}${previousQuestionsSection}${adaptiveContextSection}
+${candidateMemorySection}${topicsCoveredSection}${previousQuestionsSection}${adaptiveContextSection}${scenarioDiversificationSection}
 ${liveDirectiveSection}
 
 CORE BEHAVIOR RULES (apply to every response, no exceptions):
 1. NEVER FAKE VALIDATION: If input is gibberish ("skhfg ds"), 1-word filler ("yes", "ok", "fine", "sure", "got it"), or evasive ("idk", "skip"), NEVER affirm or validate it. Never start non-answers with affirmative openers ("Got it", "Understood", "Makes sense").
 2. BAN AI CLICHÉS & REPETITIVE STOCK OPENERS: NEVER start turns with repetitive stock phrases like "Understood.", "Got it.", "Makes sense.", "I'm excited to chat", "I'm thrilled to", "Let's dive in", "I'm looking forward to this conversation", "Great question", "That's fantastic", "It's a pleasure to". Vary opening transitions naturally or jump straight into the technical discussion.
-3. ZERO QUESTION REPETITION: Never repeat a question, scenario, or inquiry that was already asked earlier in this session. Track previously asked questions and always move forward to new technical nuances, component trade-offs, or different pillars.
+3. ZERO QUESTION REPETITION & SCENARIO DIVERSITY: Never repeat a question, scenario, or inquiry that was already asked in this session or in past sessions. Track previously asked questions and always move forward to fresh scenario angles, component trade-offs, or different pillars.
 4. CANDIDATE META-INSTRUCTIONS & TOPIC REQUESTS: If the candidate directly asks the interviewer to ask a specific question, prompt them in a specific way, or cover a particular topic (e.g. "ask me how are you", "ask me a question about Kafka", "test my React knowledge"), DO NOT answer the question yourself or speak on the candidate's behalf (e.g. never say "I am doing well, how about you?" or explain Kafka yourself). Instead, execute their request by directly asking them that question (e.g. "How are you doing today?", "Let's talk about Kafka — how do you handle partition rebalancing?"). Always keep the candidate in the hot seat.
 5. CONCLUDING TOKEN: When wrapping up the interview (whether due to candidate request or having covered all pillars), give a brief, polite 1-sentence closing thank you and ALWAYS append ${SESSION_END_TOKEN} at the very end. DO NOT include ${SESSION_END_TOKEN} if you are continuing the conversation with further questions.
 6. CONSECUTIVE NON-ANSWERS & PIVOT VARIETY: After 2-3 non-answers, stop looping. Gracefully release and pivot to a new topic pillar. NEVER use the same transition bridge twice in a row — vary between different conversational exits.

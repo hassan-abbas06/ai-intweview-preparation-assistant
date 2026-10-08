@@ -1,4 +1,5 @@
-import { STTCallbacks, VoiceError, VoiceState } from "./types";
+import { STTCallbacks, VoiceError, VoiceState, VADConfig, VoiceTurnTiming } from "./types";
+import { VoiceActivityDetector } from "./vad";
 
 // Declarations for browser SpeechRecognition API
 interface IWindowSpeechRecognition extends Window {
@@ -9,12 +10,19 @@ interface IWindowSpeechRecognition extends Window {
 export class SpeechToTextEngine {
   private recognition: any = null;
   private mediaStream: MediaStream | null = null;
+  private vad: VoiceActivityDetector | null = null;
   private isListening = false;
   private accumulatedFinalTranscript = "";
+  private latestInterim = "";
   private callbacks: STTCallbacks;
+  private vadConfig: VADConfig;
+  private restartTimeout: NodeJS.Timeout | null = null;
+  private lastInterviewerQuestionEndMs: number | null = null;
+  private wasInterrupted = false;
 
-  constructor(callbacks: STTCallbacks = {}) {
+  constructor(callbacks: STTCallbacks = {}, vadConfig: VADConfig = {}) {
     this.callbacks = callbacks;
+    this.vadConfig = vadConfig;
   }
 
   public setCallbacks(callbacks: STTCallbacks) {
@@ -41,7 +49,6 @@ export class SpeechToTextEngine {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Keep reference to stop tracks later
       this.mediaStream = stream;
       return true;
     } catch (err: any) {
@@ -70,7 +77,7 @@ export class SpeechToTextEngine {
   }
 
   /**
-   * Starts listening for candidate speech.
+   * Starts continuous listening for candidate speech with active VAD.
    */
   public async startListening(): Promise<boolean> {
     if (this.isListening) return true;
@@ -91,19 +98,76 @@ export class SpeechToTextEngine {
     }
 
     try {
-      const win = window as IWindowSpeechRecognition;
-      const SpeechRecognitionClass = win.SpeechRecognition || win.webkitSpeechRecognition;
-      this.recognition = new SpeechRecognitionClass();
+      this.isListening = true;
+      this.accumulatedFinalTranscript = "";
+      this.latestInterim = "";
 
+      // Initialize and start Voice Activity Detector on the active microphone stream
+      if (this.mediaStream) {
+        this.vad = new VoiceActivityDetector(
+          {
+            onSpeechStart: () => {
+              this.callbacks.onSpeechStart?.();
+            },
+            onSpeechEnd: () => {
+              this.callbacks.onSpeechEnd?.();
+              this.handleAutoEndOfTurn();
+            },
+            onError: (err) => {
+              console.warn("[VAD Warning]:", err.message);
+            },
+          },
+          this.vadConfig
+        );
+        this.vad.start(this.mediaStream);
+      }
+
+      this.initRecognition();
+      return true;
+    } catch (err: any) {
+      console.error("[STT Error] Failed to start speech recognition:", err);
+      this.cleanup();
+      this.callbacks.onError?.({
+        type: "AUDIO_CAPTURE_ERROR",
+        message: err.message || "Failed to initialize speech recognition.",
+        originalError: err,
+      });
+      this.callbacks.onStateChange?.("ERROR");
+      return false;
+    }
+  }
+
+  /**
+   * Initializes or restarts the underlying browser SpeechRecognition instance.
+   */
+  private initRecognition(): void {
+    if (!this.isListening) return;
+    if (typeof window === "undefined") return;
+
+    const win = window as IWindowSpeechRecognition;
+    const SpeechRecognitionClass = win?.SpeechRecognition || win?.webkitSpeechRecognition;
+    if (!SpeechRecognitionClass) return;
+
+    try {
+      if (this.recognition) {
+        try {
+          this.recognition.onstart = null;
+          this.recognition.onresult = null;
+          this.recognition.onerror = null;
+          this.recognition.onend = null;
+          this.recognition.abort();
+        } catch {
+          // Ignore
+        }
+      }
+
+      this.recognition = new SpeechRecognitionClass();
       this.recognition.continuous = true;
       this.recognition.interimResults = true;
       this.recognition.lang = "en-US";
       this.recognition.maxAlternatives = 1;
 
-      this.accumulatedFinalTranscript = "";
-
       this.recognition.onstart = () => {
-        this.isListening = true;
         this.callbacks.onStateChange?.("LISTENING");
       };
 
@@ -123,13 +187,22 @@ export class SpeechToTextEngine {
         if (finalChunk) {
           this.accumulatedFinalTranscript += (this.accumulatedFinalTranscript ? " " : "") + finalChunk.trim();
         }
+        this.latestInterim = interim.trim();
 
-        const currentDisplay = [this.accumulatedFinalTranscript, interim].filter(Boolean).join(" ").trim();
+        const currentDisplay = [this.accumulatedFinalTranscript, this.latestInterim].filter(Boolean).join(" ").trim();
         this.callbacks.onTranscriptChange?.(currentDisplay);
       };
 
       this.recognition.onerror = (event: any) => {
         const error = event.error;
+        if (error === "no-speech") {
+          // Normal silence, don't crash or abort
+          return;
+        }
+        if (error === "aborted" && !this.isListening) {
+          return;
+        }
+
         console.warn("[STT Warning] Speech recognition event error:", error);
 
         if (error === "not-allowed") {
@@ -138,8 +211,6 @@ export class SpeechToTextEngine {
             message: "Microphone permission was blocked. Please grant access in your browser.",
           });
           this.callbacks.onStateChange?.("ERROR");
-        } else if (error === "no-speech") {
-          // Normal silence, don't crash
         } else if (error === "audio-capture") {
           this.callbacks.onError?.({
             type: "AUDIO_CAPTURE_ERROR",
@@ -155,46 +226,98 @@ export class SpeechToTextEngine {
       };
 
       this.recognition.onend = () => {
-        const wasListening = this.isListening;
-        this.isListening = false;
-        this.cleanupMediaStream();
-
-        if (wasListening) {
-          const finalResult = this.accumulatedFinalTranscript.trim();
-          if (finalResult) {
-            this.callbacks.onStateChange?.("PROCESSING");
-            this.callbacks.onFinalTranscript?.(finalResult);
-          } else {
-            this.callbacks.onStateChange?.("IDLE");
-          }
+        // Continuous listening: if user is still in listening mode,
+        // automatically restart after the browser pauses on prolonged silence
+        if (this.isListening) {
+          if (this.restartTimeout) clearTimeout(this.restartTimeout);
+          this.restartTimeout = setTimeout(() => {
+            if (this.isListening) {
+              try {
+                this.recognition?.start();
+              } catch {
+                // Ignore if already active
+              }
+            }
+          }, 80);
         }
       };
 
       this.recognition.start();
-      return true;
     } catch (err: any) {
-      console.error("[STT Error] Failed to start speech recognition:", err);
-      this.cleanup();
-      this.callbacks.onError?.({
-        type: "AUDIO_CAPTURE_ERROR",
-        message: err.message || "Failed to initialize speech recognition.",
-        originalError: err,
-      });
-      this.callbacks.onStateChange?.("ERROR");
-      return false;
+      console.warn("[STT Warning] Failed to start recognition instance:", err);
     }
   }
 
+  public setInterviewerQuestionEnd(timestampMs: number): void {
+    this.lastInterviewerQuestionEndMs = timestampMs;
+  }
+
+  public markInterrupted(): void {
+    this.wasInterrupted = true;
+  }
+
+  private buildTurnTiming(): VoiceTurnTiming | undefined {
+    const vadTiming = this.vad?.getLastTurnTiming();
+    return {
+      interviewerQuestionEndMs: this.lastInterviewerQuestionEndMs ?? undefined,
+      speechStartMs: vadTiming?.speechStartMs ?? undefined,
+      speechEndMs: vadTiming?.speechEndMs ?? undefined,
+      pauseIntervals: vadTiming?.pauseIntervals ?? [],
+      isInterrupted: this.wasInterrupted,
+    };
+  }
+
   /**
-   * Stops listening and finalizes candidate transcript.
+   * Called automatically by VAD when the candidate stops speaking and silence threshold elapses.
+   */
+  public handleAutoEndOfTurn(): void {
+    if (!this.isListening) return;
+
+    const fullTranscript = this.getCurrentTranscript();
+    if (!fullTranscript) return;
+
+    const timing = this.buildTurnTiming();
+    this.wasInterrupted = false;
+
+    // Reset buffer before emitting turn
+    this.accumulatedFinalTranscript = "";
+    this.latestInterim = "";
+
+    this.callbacks.onTranscriptChange?.("");
+    this.callbacks.onFinalTranscript?.(fullTranscript, timing);
+  }
+
+  /**
+   * Returns current combined transcript (accumulated final + latest interim).
+   */
+  public getCurrentTranscript(): string {
+    return [this.accumulatedFinalTranscript, this.latestInterim].filter(Boolean).join(" ").trim();
+  }
+
+  /**
+   * Resets internal transcript buffers (e.g. upon barge-in or when a turn starts).
+   */
+  public resetTranscript(): void {
+    this.accumulatedFinalTranscript = "";
+    this.latestInterim = "";
+    this.callbacks.onTranscriptChange?.("");
+  }
+
+  /**
+   * Manually stops listening and finalizes candidate transcript.
    */
   public stopListening(): string {
-    if (!this.isListening && !this.recognition) {
-      return this.accumulatedFinalTranscript.trim();
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
     }
 
+    const finalResult = this.getCurrentTranscript();
     this.isListening = false;
-    const finalResult = this.accumulatedFinalTranscript.trim();
+
+    if (this.vad) {
+      this.vad.stop();
+    }
 
     try {
       if (this.recognition) {
@@ -206,22 +329,37 @@ export class SpeechToTextEngine {
 
     this.cleanupMediaStream();
 
+    const timing = this.buildTurnTiming();
+    this.wasInterrupted = false;
+
     if (finalResult) {
       this.callbacks.onStateChange?.("PROCESSING");
-      this.callbacks.onFinalTranscript?.(finalResult);
+      this.callbacks.onFinalTranscript?.(finalResult, timing);
     } else {
       this.callbacks.onStateChange?.("IDLE");
     }
 
+    this.accumulatedFinalTranscript = "";
+    this.latestInterim = "";
     return finalResult;
   }
 
   /**
-   * Aborts listening without producing a final transcript.
+   * Aborts listening immediately without producing a final transcript.
    */
-  public abort() {
+  public abort(): void {
     this.isListening = false;
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
+    }
     this.accumulatedFinalTranscript = "";
+    this.latestInterim = "";
+
+    if (this.vad) {
+      this.vad.stop();
+    }
+
     try {
       if (this.recognition) {
         this.recognition.abort();
@@ -233,7 +371,7 @@ export class SpeechToTextEngine {
     this.callbacks.onStateChange?.("IDLE");
   }
 
-  private cleanupMediaStream() {
+  private cleanupMediaStream(): void {
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach((track) => {
         try {
@@ -246,7 +384,16 @@ export class SpeechToTextEngine {
     }
   }
 
-  public cleanup() {
+  public cleanup(): void {
+    this.isListening = false;
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
+    }
+    if (this.vad) {
+      this.vad.cleanup();
+      this.vad = null;
+    }
     this.cleanupMediaStream();
     if (this.recognition) {
       try {
@@ -260,6 +407,5 @@ export class SpeechToTextEngine {
       }
       this.recognition = null;
     }
-    this.isListening = false;
   }
 }

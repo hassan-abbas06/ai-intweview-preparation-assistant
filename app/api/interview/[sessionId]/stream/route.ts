@@ -10,7 +10,13 @@ import {
   InterviewOrchestrator,
   SESSION_END_TOKEN,
 } from "@/lib/interview/prompts";
+import {
+  QuestionDiversityService,
+  validateCandidateQuestion,
+  getDiverseFallbackQuestion,
+} from "@/lib/interview/question-diversity";
 import { EvaluationWorker } from "@/services/evaluation-worker";
+import { ResponseAnalyzerService } from "@/services/response-analyzer";
 
 export const runtime = "nodejs";
 
@@ -34,6 +40,8 @@ export async function POST(
     const body = await req.json().catch(() => ({}));
     const isOpening = Boolean(body.isOpening);
     const candidateMessage = body.message?.trim();
+    const modality = body.modality === "VOICE" ? "VOICE" : "TEXT";
+    const voiceTiming = body.timing;
 
     // Verify session existence and candidate ownership
     const interviewSession = await prisma.interviewSession.findUnique({
@@ -84,8 +92,18 @@ export async function POST(
         );
       }
 
+      // Fetch cross-session history for the candidate to guarantee cross-session question diversity
+      const crossSessionHistory = await QuestionDiversityService.getCrossSessionHistory(
+        interviewSession.userId,
+        interviewSession.type,
+        interviewSession.domain
+      );
+
       // Reconstruct InterviewState & Orchestrator Decision
-      const interviewState = buildInterviewState(interviewSession);
+      const interviewState = buildInterviewState({
+        ...interviewSession,
+        crossSessionAskedQuestions: crossSessionHistory.map((h) => h.questionText),
+      });
       const orchestratorDecision = InterviewOrchestrator.decideNextStep({
         state: interviewState,
         isOpening: true,
@@ -99,54 +117,114 @@ export async function POST(
 
       const customStream = new ReadableStream({
         async start(controller) {
-          let accumulatedText = "";
           const tStreamStart = Date.now();
-          let tFirstToken = 0;
-          let activeModel = "";
-          let activeProvider = "";
+          let activeModel = "llama-3.3-70b-versatile";
+          let activeProvider = "groq";
 
           try {
-            await llm.streamText({
+            // Pre-delivery generation with hard diversity validation
+            let generatedText = await llm.generateText({
               messages: [{ role: "user", content: openingInstruction }],
               systemInstruction: systemPrompt,
               temperature: 0.5,
               maxOutputTokens: 200,
-              onMeta(meta) {
-                activeProvider = meta.provider;
-                activeModel = meta.model;
-                const metaPayload = `data: ${JSON.stringify({
-                  type: "meta",
-                  provider: meta.provider,
-                  model: meta.model,
-                })}\n\n`;
-                controller.enqueue(encoder.encode(metaPayload));
-              },
-              onChunk(chunk) {
-                if (!tFirstToken) {
-                  tFirstToken = Date.now();
-                }
-                accumulatedText += chunk;
-                const ssePayload = `data: ${JSON.stringify({
-                  type: "token",
-                  content: chunk,
-                })}\n\n`;
-                controller.enqueue(encoder.encode(ssePayload));
-              },
             });
+
+            // Validate against past cross-session history
+            let validation = validateCandidateQuestion(
+              generatedText,
+              crossSessionHistory,
+              { targetPillarIndex: 0 }
+            );
+
+            if (!validation.isValid) {
+              console.warn(
+                `[Diversity Guardrail] Opening question collision: "${generatedText}" matched "${validation.collidedQuestion}". Reason: ${validation.reason}. Regenerating...`
+              );
+              const retryInstruction = `${openingInstruction}\n\nIMPORTANT: The candidate was already asked "${validation.collidedQuestion}". Introduce a fresh, distinct scenario focusing on ${validation.suggestedAlternativeArchetype || "a different technical context"}.`;
+              try {
+                const alternativeText = await llm.generateText({
+                  messages: [{ role: "user", content: retryInstruction }],
+                  systemInstruction: systemPrompt,
+                  temperature: 0.7,
+                  maxOutputTokens: 200,
+                });
+                const secondValidation = validateCandidateQuestion(
+                  alternativeText,
+                  crossSessionHistory,
+                  { targetPillarIndex: 0 }
+                );
+                if (secondValidation.isValid) {
+                  generatedText = alternativeText;
+                } else {
+                  generatedText = getDiverseFallbackQuestion(
+                    0,
+                    orchestratorDecision.targetPillarName,
+                    interviewSession.domain
+                  );
+                }
+              } catch (altErr) {
+                generatedText = getDiverseFallbackQuestion(
+                  0,
+                  orchestratorDecision.targetPillarName,
+                  interviewSession.domain
+                );
+              }
+            }
+
+            // Stream metadata event
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "meta",
+                  provider: activeProvider,
+                  model: activeModel,
+                })}\n\n`
+              )
+            );
+
+            // Stream tokens to candidate client
+            const chunks = generatedText.match(/(\S+\s*)/g) || [generatedText];
+            for (const chunk of chunks) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: "token",
+                    content: chunk,
+                  })}\n\n`
+                )
+              );
+              if (process.env.NODE_ENV !== "test") {
+                await new Promise((r) => setTimeout(r, 10));
+              }
+            }
 
             const tStreamEnd = Date.now();
 
             // Save completed assistant opening question to DB
-            let savedMsgId = "";
-            if (accumulatedText.trim().length > 0) {
+            const cleanOpeningText = generatedText.trim();
+            if (cleanOpeningText.length > 0) {
               const savedMsg = await prisma.interviewMessage.create({
                 data: {
                   sessionId,
                   role: "assistant",
-                  content: accumulatedText.trim(),
+                  content: cleanOpeningText,
                 },
               });
-              savedMsgId = savedMsg.id;
+
+              // Atomically record question into persistent QuestionHistory
+              await QuestionDiversityService.recordQuestion({
+                userId: interviewSession.userId,
+                sessionId,
+                questionText: cleanOpeningText,
+                pillarIndex: 0,
+                pillarSlug: "PILLAR-0",
+                pillarName: orchestratorDecision.targetPillarName || "System Architecture",
+                track: interviewSession.type,
+                domain: interviewSession.domain,
+                difficulty: interviewSession.difficulty,
+                questionType: "OPENING",
+              });
 
               const donePayload = `data: ${JSON.stringify({
                 type: "done",
@@ -156,24 +234,20 @@ export async function POST(
             }
 
             const tFinished = Date.now();
-
-            // Log high-resolution timing breakdown for session start
             console.log(`
 ┌────────────────────────────────────────────────────────────┐
 │ ⏱️  [TIMING PROFILE: OPENING QUESTION STREAM]
 ├────────────────────────────────────────────────────────────┤
-│ Active Provider & Model     : ${activeProvider || "groq"} (${activeModel || "primary"})
+│ Active Provider & Model     : ${activeProvider} (${activeModel})
 │ Orchestrator Action         : ${orchestratorDecision.action} (${orchestratorDecision.reasonCode})
 │ 1. NextAuth Session Auth    : ${tAuth - t0}ms
 │ 2. PostgreSQL Session Lookup: ${tDbLookup - tAuth}ms
-│ 3. Time to First Token TTFT : ${tFirstToken ? tFirstToken - tStreamStart : 0}ms
-│ 4. LLM Stream Generation    : ${tStreamEnd - tStreamStart}ms (${accumulatedText.length} chars)
-│ 5. DB Message Insertion     : ${tFinished - tStreamEnd}ms
+│ 3. Question Generation/Check: ${tStreamEnd - tStreamStart}ms
+│ 4. DB Message Insertion     : ${tFinished - tStreamEnd}ms
 │ ──────────────────────────────────────────────────────────
 │ TOTAL OPENING TURN DURATION : ${tFinished - t0}ms
 └────────────────────────────────────────────────────────────┘
 `);
-
             controller.close();
           } catch (err: any) {
             const detailedMsg = extractLLMErrorMessage(err);
@@ -205,8 +279,21 @@ export async function POST(
       );
     }
 
+    // Retrieve cross-session question history for this candidate
+    const crossSessionHistory = await QuestionDiversityService.getCrossSessionHistory(
+      interviewSession.userId,
+      interviewSession.type,
+      interviewSession.domain
+    );
+
     // Reconstruct complete InterviewState & determine next action via Orchestrator
-    const interviewState = buildInterviewState(interviewSession, candidateMessage);
+    const interviewState = buildInterviewState(
+      {
+        ...interviewSession,
+        crossSessionAskedQuestions: crossSessionHistory.map((h) => h.questionText),
+      },
+      candidateMessage
+    );
     const orchestratorDecision = InterviewOrchestrator.decideNextStep({
       state: interviewState,
       candidateMessage,
@@ -228,6 +315,7 @@ export async function POST(
 
     // Transactional Outbox: Atomically increment turn counter, persist Candidate Message + EvaluationJob(PENDING)
     const tBeforeUserMsgSave = Date.now();
+    let recordedTurnSequence = 1;
     try {
       await prisma.$transaction(async (tx) => {
         const updatedSession = await tx.interviewSession.update({
@@ -236,6 +324,7 @@ export async function POST(
           select: { turnCounter: true },
         });
 
+        recordedTurnSequence = updatedSession.turnCounter;
         const turnSequenceNumber = updatedSession.turnCounter;
         const idempotencyKey = EvaluationWorker.getJobIdempotencyKey(sessionId, turnSequenceNumber);
 
@@ -278,6 +367,24 @@ export async function POST(
         },
       }).catch(() => {});
     }
+
+    // Response & Voice Analysis: Decoupled from critical turn transaction & non-blocking
+    try {
+      const responseAnalysis = ResponseAnalyzerService.analyzeResponse({
+        sessionId,
+        turnSequenceNumber: recordedTurnSequence,
+        candidateMessage,
+        modality,
+        voiceTiming,
+      });
+
+      // Asynchronously persist analysis (failures do not impact interview flow or stream)
+      ResponseAnalyzerService.persistAnalysis(responseAnalysis, prisma).catch((persistErr) => {
+        console.warn("[Response Analysis Persistence Warning]:", persistErr?.message);
+      });
+    } catch (analysisErr: any) {
+      console.warn("[Response Analysis Calculation Warning]:", analysisErr?.message);
+    }
     const tAfterUserMsgSave = Date.now();
 
     // Construct full conversation history
@@ -295,48 +402,138 @@ export async function POST(
     // Create readable SSE stream
     const customStream = new ReadableStream({
       async start(controller) {
-        let accumulatedText = "";
         const tStreamStart = Date.now();
-        let tFirstToken = 0;
-        let activeModel = "";
-        let activeProvider = "";
+        let activeModel = "llama-3.3-70b-versatile";
+        let activeProvider = "groq";
 
         try {
-          await llm.streamText({
+          // Pre-delivery generation with hard diversity validation
+          let generatedText = await llm.generateText({
             messages: historyMessages,
             systemInstruction: systemPrompt,
             temperature: 0.5,
             maxOutputTokens: 200,
-            onMeta(meta) {
-              activeProvider = meta.provider;
-              activeModel = meta.model;
-              const metaPayload = `data: ${JSON.stringify({
-                type: "meta",
-                provider: meta.provider,
-                model: meta.model,
-              })}\n\n`;
-              controller.enqueue(encoder.encode(metaPayload));
-            },
-            onChunk(chunk) {
-              if (!tFirstToken) {
-                tFirstToken = Date.now();
-              }
-              accumulatedText += chunk;
-              const ssePayload = `data: ${JSON.stringify({
-                type: "token",
-                content: chunk,
-              })}\n\n`;
-              controller.enqueue(encoder.encode(ssePayload));
-            },
           });
-
-          const tStreamEnd = Date.now();
 
           // Check if assistant emitted structural session termination token
           const isSessionEnded =
-            accumulatedText.includes(SESSION_END_TOKEN) ||
+            generatedText.includes(SESSION_END_TOKEN) ||
             orchestratorDecision.isTerminalTurn;
-          const cleanAssistantText = accumulatedText
+
+          // Hard Diversity & Anti-Repetition Validation (only for active questions, not session conclusion)
+          if (!isSessionEnded) {
+            const withinSessionQuestions = interviewSession.messages
+              .filter((m) => m.role === "assistant")
+              .map((m) => ({ questionText: m.content }));
+            const allHistoricalQuestions = [
+              ...withinSessionQuestions,
+              ...crossSessionHistory,
+            ];
+
+            const isFollowUpAction =
+              orchestratorDecision.action === "DRILL_DOWN" ||
+              orchestratorDecision.action === "CHALLENGE_TRADEOFF";
+
+            let validation = validateCandidateQuestion(
+              generatedText,
+              allHistoricalQuestions,
+              {
+                precedingCandidateAnswer: candidateMessage,
+                isFollowUpAction,
+                targetPillarIndex: orchestratorDecision.targetPillarIndex,
+              }
+            );
+
+            if (!validation.isValid) {
+              console.warn(
+                `[Diversity Guardrail] Rejected candidate question due to ${validation.matchLevel}: "${generatedText}" collided with "${validation.collidedQuestion}". Reason: ${validation.reason}. Regenerating...`
+              );
+
+              const retryInstruction = `
+The previous draft question was rejected because it duplicates or closely resembles a previously asked question: "${validation.collidedQuestion}".
+Reason: ${validation.reason}
+MANDATORY DIRECTIVE: You MUST generate a completely distinct, alternative question targeting the scenario archetype: "${validation.suggestedAlternativeArchetype}".
+Ensure the new question tests Pillar ${orchestratorDecision.targetPillarIndex + 1} (${orchestratorDecision.targetPillarName}) with different technical components and failure modes.
+`.trim();
+
+              try {
+                const retryMessages = [
+                  ...historyMessages,
+                  { role: "assistant" as const, content: generatedText },
+                  { role: "user" as const, content: retryInstruction },
+                ];
+
+                const alternativeText = await llm.generateText({
+                  messages: retryMessages,
+                  systemInstruction: systemPrompt,
+                  temperature: 0.7,
+                  maxOutputTokens: 200,
+                });
+
+                const secondValidation = validateCandidateQuestion(
+                  alternativeText,
+                  allHistoricalQuestions,
+                  {
+                    precedingCandidateAnswer: candidateMessage,
+                    isFollowUpAction,
+                    targetPillarIndex: orchestratorDecision.targetPillarIndex,
+                  }
+                );
+
+                if (secondValidation.isValid) {
+                  generatedText = alternativeText;
+                } else {
+                  console.warn(
+                    `[Diversity Guardrail] Secondary validation failed: "${alternativeText}". Applying deterministic archetype fallback...`
+                  );
+                  generatedText = getDiverseFallbackQuestion(
+                    orchestratorDecision.targetPillarIndex,
+                    orchestratorDecision.targetPillarName,
+                    interviewSession.domain,
+                    validation.suggestedAlternativeArchetype
+                  );
+                }
+              } catch (retryErr) {
+                console.warn("[Diversity Guardrail] Regeneration failed, applying fallback:", retryErr);
+                generatedText = getDiverseFallbackQuestion(
+                  orchestratorDecision.targetPillarIndex,
+                  orchestratorDecision.targetPillarName,
+                  interviewSession.domain,
+                  validation.suggestedAlternativeArchetype
+                );
+              }
+            }
+          }
+
+          // Stream metadata event
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: "meta",
+                provider: activeProvider,
+                model: activeModel,
+              })}\n\n`
+            )
+          );
+
+          // Stream tokens to candidate client
+          const chunks = generatedText.match(/(\S+\s*)/g) || [generatedText];
+          for (const chunk of chunks) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "token",
+                  content: chunk,
+                })}\n\n`
+              )
+            );
+            if (process.env.NODE_ENV !== "test") {
+              await new Promise((r) => setTimeout(r, 10));
+            }
+          }
+
+          const tStreamEnd = Date.now();
+          const cleanAssistantText = generatedText
             .replace(/\[SESSION_COMPLETED\]/g, "")
             .trim();
 
@@ -356,6 +553,20 @@ export async function POST(
                 where: { id: sessionId },
                 data: { status: "COMPLETED" },
               });
+            } else {
+              // Atomically record technical interview question to persistent QuestionHistory
+              await QuestionDiversityService.recordQuestion({
+                userId: interviewSession.userId,
+                sessionId,
+                questionText: cleanAssistantText,
+                pillarIndex: orchestratorDecision.targetPillarIndex,
+                pillarSlug,
+                pillarName: orchestratorDecision.targetPillarName,
+                track: interviewSession.type,
+                domain: interviewSession.domain,
+                difficulty: interviewSession.difficulty,
+                questionType: orchestratorDecision.action,
+              });
             }
 
             const donePayload = `data: ${JSON.stringify({
@@ -373,16 +584,15 @@ export async function POST(
 ┌────────────────────────────────────────────────────────────┐
 │ ⏱️  [TIMING PROFILE: REGULAR CANDIDATE TURN]
 ├────────────────────────────────────────────────────────────┤
-│ Active Provider & Model     : ${activeProvider || "groq"} (${activeModel || "primary"})
+│ Active Provider & Model     : ${activeProvider} (${activeModel})
 │ Orchestrator Action         : ${orchestratorDecision.action} (${orchestratorDecision.reasonCode})
 │ Target Pillar               : Pillar ${orchestratorDecision.targetPillarIndex + 1} (${orchestratorDecision.targetPillarName})
 │ 1. NextAuth Session Auth    : ${tAuth - t0}ms
 │ 2. PostgreSQL Session Lookup: ${tDbLookup - tAuth}ms
 │ 3. User Message DB Save     : ${tAfterUserMsgSave - tBeforeUserMsgSave}ms
 │ 4. Prompt & Orchestration   : ${tPromptBuilt - tDbLookup}ms
-│ 5. Time to First Token TTFT : ${tFirstToken ? tFirstToken - tStreamStart : 0}ms
-│ 6. LLM Stream Generation    : ${tStreamEnd - tStreamStart}ms (${accumulatedText.length} chars)
-│ 7. DB Message Insertion     : ${tFinished - tStreamEnd}ms
+│ 5. Generation & Diversity   : ${tStreamEnd - tStreamStart}ms
+│ 6. DB Message Insertion     : ${tFinished - tStreamEnd}ms
 │ ──────────────────────────────────────────────────────────
 │ TOTAL REGULAR TURN DURATION : ${tFinished - t0}ms
 └────────────────────────────────────────────────────────────┘

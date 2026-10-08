@@ -4,6 +4,7 @@ import {
   DeterministicReportEngine,
   DeterministicReportPayload,
 } from "./report-generator";
+import { ReportSynthesizerService } from "./report-synthesizer";
 
 // ============================================================================
 // PHASE 4A-2 REPORT PERSISTENCE TYPES
@@ -193,6 +194,14 @@ export class ReportPersistenceService {
         },
       });
 
+      // Automatic Qualitative Synthesis Trigger (Phase 4C)
+      // When deterministic calculation reaches READY or PARTIAL, schedule qualitative synthesis
+      if (finalStatus === "READY" || finalStatus === "PARTIAL") {
+        setTimeout(() => {
+          ReportPersistenceService.triggerSynthesisInBackground(sessionId);
+        }, 100);
+      }
+
       return updated;
     } catch (err: any) {
       // Diagnostic failure persistence without score fabrication
@@ -247,5 +256,24 @@ export class ReportPersistenceService {
     return prismaClient.interviewReport.findUnique({
       where: { sessionId },
     });
+  }
+
+  /**
+   * Triggers qualitative synthesis in the background once deterministic calculation is READY.
+   * Safe and non-blocking: handles duplicate/concurrent triggers via ReportSynthesizerService idempotency.
+   */
+  static triggerSynthesisInBackground(sessionId: string): void {
+    ReportSynthesizerService.synthesizeReport(sessionId)
+      .then((res) => {
+        console.log(
+          `[Auto-Synthesis Complete] Session ${sessionId} status: ${res.synthesisStatus}`
+        );
+      })
+      .catch((err) => {
+        if (err?.code === "P2025" || err?.message?.includes("not found")) {
+          return; // Session or report was deleted before background synthesis executed
+        }
+        console.error(`[Auto-Synthesis Error] Session ${sessionId}:`, err);
+      });
   }
 }

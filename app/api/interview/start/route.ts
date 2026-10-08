@@ -4,6 +4,7 @@ import { z } from "zod";
 import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
 import { selectAptitudeQuestions } from "@/lib/interview/aptitude-bank";
+import { QuestionDiversityService } from "@/lib/interview/question-diversity";
 import { successResponse, errorResponse } from "@/lib/api-response";
 import { InterviewType, InterviewModality } from "@prisma/client";
 
@@ -57,27 +58,31 @@ export async function POST(req: NextRequest) {
     const effectiveDomain = type === "DOMAIN" ? domain || user.domain || "Software_Engineering" : null;
 
     if (type === "APTITUDE") {
-      // Retrieve recent aptitude sessions for candidate to avoid duplicate questions
+      // Retrieve recent aptitude sessions and persistent question history for candidate
       const recentSessions = await prisma.interviewSession.findMany({
         where: {
           userId: user.id,
           type: "APTITUDE",
         },
         orderBy: { startedAt: "desc" },
-        take: 3,
+        take: 5,
         select: { focusArea: true },
       });
 
-      const recentQuestionIds: string[] = [];
+      const historicalExclusionIds = await QuestionDiversityService.getAptitudeExclusionIds(user.id);
+      const combinedExcludedIds = new Set<string>(historicalExclusionIds);
+
       for (const s of recentSessions) {
         if (s.focusArea) {
           const ids = s.focusArea.split(",").map((id) => id.trim()).filter(Boolean);
-          recentQuestionIds.push(...ids);
+          for (const id of ids) {
+            combinedExcludedIds.add(id);
+          }
         }
       }
 
-      // Randomly select 15 questions balanced across Quant, Logic, and Verbal, excluding recent IDs
-      const selectedQuestions = selectAptitudeQuestions(recentQuestionIds, 15);
+      // Randomly select 15 questions balanced across Quant, Logic, and Verbal, excluding past IDs
+      const selectedQuestions = selectAptitudeQuestions(Array.from(combinedExcludedIds), 15);
       const questionIdsCsv = selectedQuestions.map((q) => q.id).join(",");
 
       const newSession = await prisma.interviewSession.create({
@@ -102,6 +107,9 @@ export async function POST(req: NextRequest) {
           }),
         },
       });
+
+      // Persist assigned question history so they are excluded across future sessions
+      await QuestionDiversityService.recordAptitudeQuestions(user.id, newSession.id, selectedQuestions);
 
       const elapsed = (performance.now() - t0).toFixed(1);
       console.log(`[API Timing: Start Session] Created Aptitude session ${newSession.id} with 15 questions in ${elapsed}ms`);

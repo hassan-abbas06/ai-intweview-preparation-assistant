@@ -16,6 +16,7 @@ import { AptitudeQuestion, selectAptitudeQuestions, getQuestionsByIds } from "@/
 import { getPersonaForInterview } from "@/lib/interview/personas";
 import { getDomainLabel } from "@/lib/constants/domains";
 import { useVoiceSession } from "@/lib/voice/use-voice-session";
+import { VoiceTurnTiming } from "@/lib/voice/types";
 import { VoiceStatusBar } from "@/components/interview/voice-status-bar";
 import {
   ArrowLeft,
@@ -77,11 +78,11 @@ export default function InterviewSessionPage() {
   modalityRef.current = modality;
 
   const voiceMessageIdsRef = useRef<Set<string>>(new Set());
-  const handleSendMessageRef = useRef<(text: string, isFromVoice?: boolean) => Promise<void>>();
+  const handleSendMessageRef = useRef<(text: string, isFromVoice?: boolean, timing?: VoiceTurnTiming) => Promise<void>>();
 
-  const handleVoiceTranscript = React.useCallback((transcript: string) => {
+  const handleVoiceTranscript = React.useCallback((transcript: string, timing?: VoiceTurnTiming) => {
     if (transcript.trim()) {
-      handleSendMessageRef.current?.(transcript, true);
+      handleSendMessageRef.current?.(transcript, true, timing);
     }
   }, []);
 
@@ -208,6 +209,7 @@ export default function InterviewSessionPage() {
       setIsStreaming(false);
       setIsWaitingForFirstToken(false);
       setStreamingText("");
+      voiceSessionRef.current?.finishTurnSubmission();
     }
   }, []);
 
@@ -276,7 +278,11 @@ export default function InterviewSessionPage() {
   };
 
   // Send message & handle token-by-token streaming
-  const handleSendMessage = async (text: string, isFromVoice: boolean = false) => {
+  const handleSendMessage = async (
+    text: string,
+    isFromVoice: boolean = false,
+    timing?: VoiceTurnTiming
+  ) => {
     if (!text.trim() || isStreaming || !session) return;
 
     setError(null);
@@ -308,7 +314,11 @@ export default function InterviewSessionPage() {
       const response = await fetch(`/api/interview/${sessionId}/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text.trim() }),
+        body: JSON.stringify({
+          message: text.trim(),
+          modality: isFromVoice ? "VOICE" : "TEXT",
+          timing: isFromVoice ? timing : undefined,
+        }),
       });
 
       if (!response.ok || !response.body) {
@@ -399,6 +409,7 @@ export default function InterviewSessionPage() {
       setIsStreaming(false);
       setIsWaitingForFirstToken(false);
       setStreamingText("");
+      voiceSessionRef.current?.finishTurnSubmission();
     }
   };
 
@@ -421,9 +432,10 @@ export default function InterviewSessionPage() {
       const elapsed = Math.round(performance.now() - t0);
 
       if (res.ok) {
-        console.log(`[Client Timing: End Interview] Session concluded on backend in ${elapsed}ms. Redirecting to dashboard...`);
+        console.log(`[Client Timing: End Interview] Session concluded on backend in ${elapsed}ms. Redirecting to report...`);
         setSession((prev) => (prev ? { ...prev, status: "COMPLETED" } : null));
-        router.push("/dashboard");
+        const targetReportUrl = data.reportUrl || `/interview/${sessionId}/report`;
+        router.push(targetReportUrl);
       } else {
         console.error(`[Client Timing: End Interview] Failed after ${elapsed}ms:`, data?.message);
         setIsEndingSession(false);
@@ -444,7 +456,7 @@ export default function InterviewSessionPage() {
           </div>
           <h2 className="text-lg font-bold font-heading text-text-primary">Concluding Interview Round</h2>
           <p className="text-xs text-text-secondary leading-relaxed">
-            Archiving your conversation transcript and synchronizing your candidate dashboard...
+            Archiving your conversation transcript and loading your performance evaluation report...
           </p>
         </div>
       </div>

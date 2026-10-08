@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
 import { errorResponse } from "@/lib/api-response";
 import { ReportPersistenceService } from "@/services/report-persistence";
+import { InterviewDeletionService } from "@/services/interview-deletion";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,11 @@ export async function GET(
     // 3. Format response according to lifecycle status
     let publicReportPayload = null;
     if (reportRecord.status === "READY" || reportRecord.status === "PARTIAL") {
+      // If synthesis has not yet begun, trigger background synthesis
+      if (!reportRecord.synthesisStatus || (reportRecord.synthesisStatus as string) === "SYNTHESIS_PENDING") {
+        ReportPersistenceService.triggerSynthesisInBackground(sessionId);
+      }
+
       publicReportPayload = {
         overallScore: reportRecord.overallScore,
         overallPerformanceLevel: reportRecord.overallPerformanceLevel,
@@ -118,5 +124,58 @@ export async function GET(
   } catch (err) {
     console.error("[API Timing: Get Report Error]:", err);
     return errorResponse("Failed to retrieve interview report.", 500, err);
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { sessionId: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.id && !session?.user?.email) {
+      return errorResponse("Unauthorized.", 401);
+    }
+
+    let userId = session.user.id;
+    if (!userId && session.user.email) {
+      const dbUser = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true },
+      });
+      if (dbUser) {
+        userId = dbUser.id;
+      }
+    }
+
+    if (!userId) {
+      return errorResponse("User account not found.", 404);
+    }
+
+    const { sessionId } = params;
+    const result = await InterviewDeletionService.deleteReportOnly(sessionId, userId);
+
+    if (!result.success) {
+      if (result.code === "NOT_FOUND") {
+        return errorResponse(result.message, 404);
+      }
+      if (result.code === "FORBIDDEN") {
+        return errorResponse(result.message, 403);
+      }
+      return errorResponse(result.message, 500);
+    }
+
+    return NextResponse.json(
+      {
+        error: false,
+        message: result.message,
+        sessionId,
+      },
+      { status: 200 }
+    );
+  } catch (err) {
+    console.error("[API Error: Delete Report]:", err);
+    return errorResponse("Failed to delete interview report.", 500, err);
   }
 }

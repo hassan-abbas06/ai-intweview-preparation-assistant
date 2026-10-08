@@ -59,6 +59,7 @@ model User {
   resumes             Resume[]
   atsScanLogs         AtsScanLog[]
   passwordResetTokens PasswordResetToken[]
+  questionHistory     QuestionHistory[]
 
   @@map("users")
 }
@@ -124,6 +125,8 @@ model InterviewSession {
   report         InterviewReport?
   messages       InterviewMessage[]
   evaluationJobs EvaluationJob[]
+  questionHistory QuestionHistory[]
+  responseAnalyses ResponseAnalysis[]
 
   @@index([userId])
   @@map("interview_sessions")
@@ -171,6 +174,92 @@ model InterviewMessage {
 
   @@index([sessionId])
   @@map("interview_messages")
+}
+
+// Question History for cross-session diversity and anti-repetition (Phase 6)
+model QuestionHistory {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  sessionId      String   @map("session_id")
+  questionText   String   @map("question_text") @db.Text
+  normalizedText String   @map("normalized_text") @db.Text
+  pillarIndex    Int?     @map("pillar_index")
+  pillarSlug     String?  @map("pillar_slug")
+  pillarName     String?  @map("pillar_name")
+  track          String   // "HR" | "DOMAIN" | "MANAGERIAL" | "APTITUDE"
+  domain         String?
+  difficulty     String?
+  questionType   String   @default("SCENARIO") @map("question_type") // "OPENING" | "SCENARIO" | "DRILL_DOWN" | "TRADEOFF" | "FOLLOW_UP"
+  keyConcepts    Json?    @default("[]") @map("key_concepts")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, track])
+  @@index([sessionId])
+  @@index([normalizedText])
+  @@map("question_history")
+}
+
+enum ResponseStatus {
+  COMPLETED
+  INTERRUPTED
+  ABANDONED
+  EMPTY
+}
+
+// Observable Voice & Response Analysis (Phase 7)
+model ResponseAnalysis {
+  id                    String           @id @default(cuid())
+  sessionId             String           @map("session_id")
+  turnSequenceNumber    Int              @map("turn_sequence_number")
+  messageId             String?          @map("message_id")
+  modality              String           @default("TEXT") // "TEXT" | "VOICE"
+  responseStatus        ResponseStatus   @default(COMPLETED) @map("response_status")
+
+  // Timing Metrics (ms, null when unavailable)
+  responseLatencyMs     Int?             @map("response_latency_ms")
+  answerDurationMs      Int?             @map("answer_duration_ms")
+  totalTurnDurationMs   Int?             @map("total_turn_duration_ms")
+
+  // Pause Metrics (Voice only, null for text)
+  pauseCount            Int?             @map("pause_count")
+  longestPauseMs        Int?             @map("longest_pause_ms")
+  averagePauseMs        Int?             @map("average_pause_ms")
+  totalPauseDurationMs  Int?             @map("total_pause_duration_ms")
+  pausesPerMinute       Float?           @map("pauses_per_minute")
+  pauseEvents           Json?            @map("pause_events")
+
+  // Speaking Rate
+  wordCount             Int              @default(0) @map("word_count")
+  speakingDurationSec   Float?           @map("speaking_duration_sec")
+  wordsPerMinute        Float?           @map("words_per_minute")
+
+  // Filler Word Detection
+  fillerCount           Int              @default(0) @map("filler_count")
+  fillerRate            Float            @default(0.0) @map("filler_rate")
+  fillerWords           Json             @default("[]") @map("filler_words")
+  fillerOccurrences     Json             @default("[]") @map("filler_occurrences")
+
+  // Disfluency Indicators
+  repeatedWordCount     Int              @default(0) @map("repeated_word_count")
+  repeatedPhraseCount   Int              @default(0) @map("repeated_phrase_count")
+  falseStartCount       Int              @default(0) @map("false_start_count")
+  disfluencyOccurrences Json             @default("[]") @map("disfluency_occurrences")
+
+  // Communication Characteristics
+  structureAssessment   String?          @map("structure_assessment")
+  observableCharacteristics Json         @default("[]") @map("observable_characteristics")
+
+  metadata              Json?            @map("metadata")
+  createdAt             DateTime         @default(now()) @map("created_at")
+
+  session               InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, turnSequenceNumber])
+  @@index([sessionId])
+  @@map("response_analyses")
 }
 
 enum ReportStatus {

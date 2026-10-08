@@ -673,7 +673,7 @@ async function runPhase3CTests() {
       },
     });
 
-    const claimedJob1 = (await EvaluationWorker.claimNextJob())!;
+    const claimedJob1 = (await EvaluationWorker.claimNextJob({ sessionId: testSession.id }))!;
     await EvaluationWorker.processJob(claimedJob1, { llmProvider: mockHighProvider });
 
     const job2 = await prisma.evaluationJob.create({
@@ -688,7 +688,7 @@ async function runPhase3CTests() {
       },
     });
 
-    const claimedJob2 = (await EvaluationWorker.claimNextJob())!;
+    const claimedJob2 = (await EvaluationWorker.claimNextJob({ sessionId: testSession.id }))!;
     await EvaluationWorker.processJob(claimedJob2, { llmProvider: mockHighProvider });
 
     const finalizedSession = (await prisma.interviewSession.findUnique({

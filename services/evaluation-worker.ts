@@ -48,6 +48,7 @@ export interface ClaimJobOptions {
   workerId?: string;
   leaseDurationMs?: number; // default: 60000ms (60s)
   prismaClient?: typeof prisma;
+  sessionId?: string;
 }
 
 export interface ProcessJobOptions {
@@ -106,6 +107,7 @@ export class EvaluationWorker {
     const prismaClient = options.prismaClient || prisma;
     const workerId = options.workerId || this.generateWorkerId();
     const leaseDurationMs = options.leaseDurationMs ?? 60000;
+    const sessionId = options.sessionId ?? null;
     const now = new Date();
     const leaseExpiresAt = new Date(now.getTime() + leaseDurationMs);
 
@@ -126,9 +128,10 @@ export class EvaluationWorker {
           "updated_at" = NOW()
         WHERE "id" = (
           SELECT "id" FROM "evaluation_jobs"
-          WHERE "status" = 'PENDING'::"EvaluationJobStatus"
+          WHERE ("status" = 'PENDING'::"EvaluationJobStatus"
              OR ("status" = 'RETRYING'::"EvaluationJobStatus" AND ("next_retry_at" IS NULL OR "next_retry_at" <= NOW()))
-             OR ("status" = 'PROCESSING'::"EvaluationJobStatus" AND "lease_expires_at" IS NOT NULL AND "lease_expires_at" <= NOW())
+             OR ("status" = 'PROCESSING'::"EvaluationJobStatus" AND "lease_expires_at" IS NOT NULL AND "lease_expires_at" <= NOW()))
+            AND ($3::text IS NULL OR "session_id" = $3)
           ORDER BY "created_at" ASC
           LIMIT 1
           FOR UPDATE SKIP LOCKED
@@ -136,7 +139,8 @@ export class EvaluationWorker {
         RETURNING *;
       `,
         workerId,
-        leaseExpiresAt.toISOString()
+        leaseExpiresAt.toISOString(),
+        sessionId
       );
 
       if (rawResult && rawResult.length > 0) {
@@ -170,6 +174,7 @@ export class EvaluationWorker {
     // 2. High-reliability fallback atomic claim using Prisma optimistic conditional update
     const candidate = await prismaClient.evaluationJob.findFirst({
       where: {
+        ...(sessionId ? { sessionId } : {}),
         OR: [
           { status: "PENDING" },
           {

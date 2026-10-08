@@ -3,91 +3,141 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { SpeechToTextEngine } from "./stt";
 import { TextToSpeechEngine } from "./tts";
-import { VoiceError, VoiceState } from "./types";
+import { VoiceStateMachine } from "./state-machine";
+import { VoiceError, VoiceState, VADConfig, VoiceTurnTiming } from "./types";
 
 interface UseVoiceSessionOptions {
   enabled: boolean;
-  onFinalTranscript?: (transcript: string) => void;
+  onFinalTranscript?: (transcript: string, timing?: VoiceTurnTiming) => void;
+  vadConfig?: VADConfig;
 }
 
-export function useVoiceSession({ enabled, onFinalTranscript }: UseVoiceSessionOptions) {
+export function useVoiceSession({
+  enabled,
+  onFinalTranscript,
+  vadConfig,
+}: UseVoiceSessionOptions) {
   const [voiceState, setVoiceState] = useState<VoiceState>("IDLE");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [error, setError] = useState<VoiceError | null>(null);
 
   const sttRef = useRef<SpeechToTextEngine | null>(null);
   const ttsRef = useRef<TextToSpeechEngine | null>(null);
+  const stateMachineRef = useRef<VoiceStateMachine>(
+    new VoiceStateMachine("IDLE", (newState) => {
+      setVoiceState(newState);
+    })
+  );
+
+  const onFinalTranscriptRef = useRef(onFinalTranscript);
+  onFinalTranscriptRef.current = onFinalTranscript;
 
   // Initialize engines lazily on client
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const stt = new SpeechToTextEngine();
+    const sm = stateMachineRef.current;
+    const stt = new SpeechToTextEngine({}, vadConfig);
     const tts = new TextToSpeechEngine();
 
     sttRef.current = stt;
     ttsRef.current = tts;
 
+    // Wire STT callbacks with StateMachine and VAD
+    stt.setCallbacks({
+      onSpeechStart: () => {
+        const { interrupted } = sm.handleSpeechStart();
+        if (interrupted) {
+          // Barge-in: immediately cancel audio playback
+          tts.stop();
+          stt.markInterrupted();
+          stt.resetTranscript();
+        }
+      },
+      onSpeechEnd: () => {
+        // Automatic end-of-turn handled via onFinalTranscript
+      },
+      onTranscriptChange: (text) => {
+        setInterimTranscript(text);
+      },
+      onFinalTranscript: (finalText, timing) => {
+        const decision = sm.evaluateTurnSubmission(finalText);
+        if (decision.shouldSubmit) {
+          setInterimTranscript("");
+          onFinalTranscriptRef.current?.(decision.transcript, timing);
+        }
+      },
+      onError: (err) => {
+        setError(err);
+        sm.handleError(err);
+      },
+    });
+
+    // Wire TTS callbacks with StateMachine
+    tts.setCallbacks({
+      onStart: () => {
+        sm.handleTTSStart();
+      },
+      onEnd: () => {
+        sm.handleTTSEnd();
+        stt.setInterviewerQuestionEnd(Date.now());
+        // Once AI speech completes, resume listening for candidate answer
+        if (sm.getState() === "LISTENING") {
+          stt.startListening().catch(() => {});
+        }
+      },
+      onInterrupted: () => {
+        // Interruption already handled in onSpeechStart
+      },
+      onError: (err) => {
+        setError(err);
+        sm.handleError(err);
+      },
+    });
+
     return () => {
       stt.cleanup();
       tts.cleanup();
+      sm.reset("IDLE");
     };
-  }, []);
+  }, [vadConfig]);
 
-  // Update callbacks when dependencies change
+  // Handle modality switching (VOICE <-> TEXT)
   useEffect(() => {
     const stt = sttRef.current;
     const tts = ttsRef.current;
+    const sm = stateMachineRef.current;
 
-    if (stt) {
-      stt.setCallbacks({
-        onStateChange: (state) => {
-          setVoiceState(state);
-        },
-        onTranscriptChange: (text) => {
-          setInterimTranscript(text);
-        },
-        onFinalTranscript: (finalText) => {
-          setInterimTranscript("");
-          setVoiceState("PROCESSING");
-          if (onFinalTranscript) {
-            onFinalTranscript(finalText);
-          }
-        },
-        onError: (err) => {
-          setError(err);
-          setVoiceState("ERROR");
-        },
-      });
+    if (!enabled) {
+      // Switching to TEXT: gracefully stop any active voice listening or speech
+      stt?.abort();
+      tts?.stop();
+      sm.reset("IDLE");
+      setInterimTranscript("");
+      setError(null);
+    } else {
+      // Switching to VOICE: initialize state safely
+      sm.reset("IDLE");
     }
-
-    if (tts) {
-      tts.setCallbacks({
-        onStart: () => {
-          setVoiceState("SPEAKING");
-        },
-        onEnd: () => {
-          setVoiceState((prev) => (prev === "SPEAKING" ? "IDLE" : prev));
-        },
-        onError: (err) => {
-          setError(err);
-          setVoiceState("ERROR");
-        },
-      });
-    }
-  }, [onFinalTranscript]);
+  }, [enabled]);
 
   const startListening = useCallback(async () => {
     if (!enabled || !sttRef.current) return false;
     setError(null);
     setInterimTranscript("");
 
-    // Stop speaking if interviewer is currently speaking
+    const sm = stateMachineRef.current;
+
+    // Cancel any active AI playback before starting candidate turn
     if (ttsRef.current) {
       ttsRef.current.stop();
     }
 
-    return await sttRef.current.startListening();
+    const started = await sttRef.current.startListening();
+    if (started) {
+      sm.transition("LISTENING", "User started listening manually");
+    }
+    return started;
   }, [enabled]);
 
   const stopListening = useCallback(() => {
@@ -98,6 +148,8 @@ export function useVoiceSession({ enabled, onFinalTranscript }: UseVoiceSessionO
   const speak = useCallback(
     (text: string, messageId?: string) => {
       if (!enabled || !ttsRef.current) return false;
+      const sm = stateMachineRef.current;
+      sm.handleTTSStart();
       return ttsRef.current.speak(text, messageId);
     },
     [enabled]
@@ -107,11 +159,18 @@ export function useVoiceSession({ enabled, onFinalTranscript }: UseVoiceSessionO
     if (ttsRef.current) {
       ttsRef.current.stop();
     }
+    const sm = stateMachineRef.current;
+    sm.transition("LISTENING", "Manual stop speaking; ready to listen");
+    sttRef.current?.startListening().catch(() => {});
+  }, []);
+
+  const finishTurnSubmission = useCallback(() => {
+    stateMachineRef.current.finishTurnSubmission();
   }, []);
 
   const clearError = useCallback(() => {
     setError(null);
-    setVoiceState("IDLE");
+    stateMachineRef.current.reset("IDLE");
   }, []);
 
   return {
@@ -124,7 +183,9 @@ export function useVoiceSession({ enabled, onFinalTranscript }: UseVoiceSessionO
     stopListening,
     speak,
     stopSpeaking,
+    finishTurnSubmission,
     isSTTSupported: sttRef.current ? sttRef.current.isSupported() : false,
     isTTSSupported: ttsRef.current ? ttsRef.current.isSupported() : false,
   };
 }
+
