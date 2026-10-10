@@ -62,6 +62,7 @@ export interface ProcessAllOptions extends ProcessJobOptions {
   workerId?: string;
   leaseDurationMs?: number;
   maxDurationMs?: number;
+  sessionId?: string;
 }
 
 // ============================================================================

@@ -183,8 +183,16 @@ export async function POST(
               )
             );
 
+            // Clean text before streaming so internal tokens are NEVER sent over SSE
+            const cleanOpeningText = generatedText
+              .replace(/\[SESSION_COMPLETED\]/gi, "")
+              .replace(/\[SESSION_COMPLETE\]/gi, "")
+              .replace(/\[SESSION_END\]/gi, "")
+              .replace(/\[INTERVIEW_COMPLETED\]/gi, "")
+              .trim();
+
             // Stream tokens to candidate client
-            const chunks = generatedText.match(/(\S+\s*)/g) || [generatedText];
+            const chunks = cleanOpeningText.match(/(\S+\s*)/g) || [cleanOpeningText];
             for (const chunk of chunks) {
               controller.enqueue(
                 encoder.encode(
@@ -202,7 +210,6 @@ export async function POST(
             const tStreamEnd = Date.now();
 
             // Save completed assistant opening question to DB
-            const cleanOpeningText = generatedText.trim();
             if (cleanOpeningText.length > 0) {
               const savedMsg = await prisma.interviewMessage.create({
                 data: {
@@ -516,8 +523,16 @@ Ensure the new question tests Pillar ${orchestratorDecision.targetPillarIndex + 
             )
           );
 
+          // Clean text before streaming so internal tokens like [SESSION_COMPLETED] are NEVER sent over SSE
+          const cleanAssistantText = generatedText
+            .replace(/\[SESSION_COMPLETED\]/gi, "")
+            .replace(/\[SESSION_COMPLETE\]/gi, "")
+            .replace(/\[SESSION_END\]/gi, "")
+            .replace(/\[INTERVIEW_COMPLETED\]/gi, "")
+            .trim();
+
           // Stream tokens to candidate client
-          const chunks = generatedText.match(/(\S+\s*)/g) || [generatedText];
+          const chunks = cleanAssistantText.match(/(\S+\s*)/g) || [cleanAssistantText];
           for (const chunk of chunks) {
             controller.enqueue(
               encoder.encode(
@@ -533,9 +548,6 @@ Ensure the new question tests Pillar ${orchestratorDecision.targetPillarIndex + 
           }
 
           const tStreamEnd = Date.now();
-          const cleanAssistantText = generatedText
-            .replace(/\[SESSION_COMPLETED\]/g, "")
-            .trim();
 
           // Save completed assistant reply to database
           if (cleanAssistantText.length > 0) {

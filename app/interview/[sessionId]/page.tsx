@@ -48,6 +48,16 @@ interface SessionData {
   messages: MessageItem[];
 }
 
+function cleanSignalTokens(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\[SESSION_COMPLETED\]/gi, "")
+    .replace(/\[SESSION_COMPLETE\]/gi, "")
+    .replace(/\[SESSION_END\]/gi, "")
+    .replace(/\[INTERVIEW_COMPLETED\]/gi, "")
+    .replace(/\[SESSION_?[A-Z]*$/i, "");
+}
+
 export default function InterviewSessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -159,10 +169,10 @@ export default function InterviewSessionPage() {
             } else if (data.type === "token" && data.content) {
               setIsWaitingForFirstToken(false);
               currentAccumulated += data.content;
-              setStreamingText(currentAccumulated.replace(/\[SESSION_COMPLETED\]/g, ""));
+              setStreamingText(cleanSignalTokens(currentAccumulated));
             } else if (data.type === "done") {
               messageCommitted = true;
-              const cleanContent = currentAccumulated.replace(/\[SESSION_COMPLETED\]/g, "").trim();
+              const cleanContent = cleanSignalTokens(currentAccumulated).trim();
               const openingMsg: MessageItem = {
                 id: data.messageId || `msg_opening_${Date.now()}`,
                 role: "assistant",
@@ -190,7 +200,7 @@ export default function InterviewSessionPage() {
 
       // Fallback in case stream completed without explicit done event
       if (!messageCommitted && currentAccumulated.trim()) {
-        const cleanContent = currentAccumulated.replace(/\[SESSION_COMPLETED\]/g, "").trim();
+        const cleanContent = cleanSignalTokens(currentAccumulated).trim();
         const openingMsg: MessageItem = {
           id: `msg_opening_${Date.now()}`,
           role: "assistant",
@@ -250,7 +260,11 @@ export default function InterviewSessionPage() {
           // Kick off opening question stream for interactive interview tracks
           triggerOpeningStream(sessionId);
           if (sessionData.messages && sessionData.messages.length > 0) {
-            setMessages((prev) => (prev.length === 0 ? sessionData.messages : prev));
+            const sanitizedMessages = sessionData.messages.map((m) => ({
+              ...m,
+              content: cleanSignalTokens(m.content).trim(),
+            }));
+            setMessages((prev) => (prev.length === 0 ? sanitizedMessages : prev));
           }
         }
       }
@@ -349,10 +363,10 @@ export default function InterviewSessionPage() {
             } else if (data.type === "token" && data.content) {
               setIsWaitingForFirstToken(false);
               currentAccumulated += data.content;
-              setStreamingText(currentAccumulated.replace(/\[SESSION_COMPLETED\]/g, ""));
+              setStreamingText(cleanSignalTokens(currentAccumulated));
             } else if (data.type === "done") {
               messageCommitted = true;
-              const cleanContent = currentAccumulated.replace(/\[SESSION_COMPLETED\]/g, "").trim();
+              const cleanContent = cleanSignalTokens(currentAccumulated).trim();
               const finalAssistantMsg: MessageItem = {
                 id: data.messageId || `msg_${Date.now()}`,
                 role: "assistant",
@@ -390,8 +404,10 @@ export default function InterviewSessionPage() {
 
       // Fallback in case stream completed without explicit done event
       if (!messageCommitted && currentAccumulated.trim()) {
-        const isEnded = currentAccumulated.includes("[SESSION_COMPLETED]");
-        const cleanContent = currentAccumulated.replace(/\[SESSION_COMPLETED\]/g, "").trim();
+        const isEnded =
+          currentAccumulated.includes("[SESSION_COMPLETED]") ||
+          currentAccumulated.includes("[SESSION_COMPLETE]");
+        const cleanContent = cleanSignalTokens(currentAccumulated).trim();
         const finalAssistantMsg: MessageItem = {
           id: `msg_${Date.now()}`,
           role: "assistant",

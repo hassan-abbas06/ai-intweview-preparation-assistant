@@ -12,8 +12,24 @@ interface ChatBubbleProps {
   isVoice?: boolean;
 }
 
+/**
+ * Strips internal system markers, completion tokens, and bracketed orchestration signals
+ * from displaying in the candidate UI.
+ */
+export function sanitizeDisplayContent(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\[SESSION_COMPLETED\]/gi, "")
+    .replace(/\[SESSION_COMPLETE\]/gi, "")
+    .replace(/\[SESSION_END\]/gi, "")
+    .replace(/\[INTERVIEW_COMPLETED\]/gi, "")
+    .replace(/\[SESSION_?[A-Z]*$/i, "")
+    .trim();
+}
+
 export function ChatBubble({ role, content, isStreaming, interviewerName, isVoice }: ChatBubbleProps) {
   const isAI = role === "assistant";
+  const displayContent = isAI ? sanitizeDisplayContent(content) : content;
 
   return (
     <div
@@ -146,12 +162,12 @@ export function ChatBubble({ role, content, isStreaming, interviewerName, isVoic
                 },
               }}
             >
-              {content}
+              {displayContent}
             </ReactMarkdown>
           </div>
         ) : (
           <div className="text-text-primary text-sm leading-relaxed whitespace-pre-wrap">
-            {content}
+            {displayContent}
           </div>
         )}
       </div>
