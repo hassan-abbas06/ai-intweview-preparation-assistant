@@ -303,6 +303,7 @@ export default function InterviewSessionPage() {
 
     // Stop interviewer speech playback immediately if active
     voiceSessionRef.current?.stopSpeaking();
+    voiceSessionRef.current?.pauseListening();
 
     // Optimistically add user message to UI
     const tempUserMsg: MessageItem = {
@@ -444,6 +445,7 @@ export default function InterviewSessionPage() {
     const t0 = performance.now();
     console.log(`[Client Timing: End Interview] User confirmed end interview for session ${sessionId}...`);
     voiceSessionRef.current?.stopSpeaking();
+    voiceSessionRef.current?.pauseListening();
     voiceSessionRef.current?.stopListening();
     setIsEndingSession(true);
     setShowEndDialog(false);
@@ -616,7 +618,7 @@ export default function InterviewSessionPage() {
                 const next = modality === "VOICE" ? "TEXT" : "VOICE";
                 if (next === "TEXT") {
                   voiceSession.stopSpeaking();
-                  voiceSession.stopListening();
+                  voiceSession.pauseListening();
                 }
                 setModality(next);
               }}
@@ -715,11 +717,12 @@ export default function InterviewSessionPage() {
                 const next = modality === "VOICE" ? "TEXT" : "VOICE";
                 if (next === "TEXT") {
                   voiceSession.stopSpeaking();
-                  voiceSession.stopListening();
+                  voiceSession.pauseListening();
                 }
                 setModality(next);
               }}
               voiceState={voiceSession.voiceState}
+              voiceTranscript={voiceSession.interimTranscript}
               interimTranscript={voiceSession.interimTranscript}
               error={voiceSession.error}
               onClearError={voiceSession.clearError}
@@ -738,12 +741,13 @@ export default function InterviewSessionPage() {
               isListening={voiceSession.voiceState === "LISTENING"}
               onToggleListening={() => {
                 if (voiceSession.voiceState === "LISTENING") {
-                  voiceSession.stopListening();
+                  voiceSession.pauseListening();
                 } else {
                   voiceSession.startListening();
                 }
               }}
               voiceState={voiceSession.voiceState}
+              voiceTranscript={voiceSession.interimTranscript}
               placeholder={
                 isStreaming
                   ? "Interviewer is responding..."

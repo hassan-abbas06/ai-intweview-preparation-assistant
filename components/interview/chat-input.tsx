@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState, useRef, useEffect } from "react";
-import { Send, Mic, MicOff, Square } from "lucide-react";
+import { Send, Mic, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ interface ChatInputProps {
   isListening?: boolean;
   onToggleListening?: () => void;
   voiceState?: string;
+  voiceTranscript?: string;
 }
 
 export function ChatInput({
@@ -22,6 +23,7 @@ export function ChatInput({
   isListening,
   onToggleListening,
   voiceState,
+  voiceTranscript,
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -46,12 +48,38 @@ export function ChatInput({
     prevDisabledRef.current = disabled;
   }, [disabled]);
 
+  // Synchronize live voice transcription into the textarea
+  const baseTextRef = useRef("");
+  const prevListeningRef = useRef(isListening);
+
+  useEffect(() => {
+    if (!prevListeningRef.current && isListening) {
+      // Just started or resumed recording: capture existing typed text as base
+      baseTextRef.current = text.trim();
+    }
+    prevListeningRef.current = isListening;
+  }, [isListening, text]);
+
+  useEffect(() => {
+    if (isListening && voiceTranscript) {
+      const base = baseTextRef.current;
+      const combined = base ? `${base} ${voiceTranscript.trim()}` : voiceTranscript.trim();
+      setText(combined);
+    }
+  }, [voiceTranscript, isListening]);
+
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!text.trim() || disabled) return;
 
+    // If still recording when submitting, pause recording first
+    if (isListening) {
+      onToggleListening?.();
+    }
+
     onSendMessage(text.trim());
     setText("");
+    baseTextRef.current = "";
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -67,23 +95,28 @@ export function ChatInput({
   };
 
   const effectivePlaceholder = isListening
-    ? "Listening... speak now or type below"
+    ? "Recording... speak now or click Pause"
     : isVoiceActive
-    ? "Type your response or click the microphone to speak..."
+    ? text.trim()
+      ? "Review your response, click Resume to speak more, or Send"
+      : "Type your response or click Record to speak..."
     : placeholder;
 
   return (
     <div
       className={cn(
         "relative w-full border border-border bg-surface rounded-2xl shadow-soft p-2 focus-within:ring-2 focus-within:ring-primary focus-within:border-transparent transition-all",
-        isListening && "ring-2 ring-primary/50 border-primary"
+        isListening && "ring-2 ring-red-500/50 border-red-500"
       )}
     >
       <textarea
         ref={textareaRef}
         rows={1}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          baseTextRef.current = e.target.value.trim();
+        }}
         onKeyDown={handleKeyDown}
         placeholder={effectivePlaceholder}
         disabled={disabled}
@@ -103,7 +136,7 @@ export function ChatInput({
         </span>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Voice Microphone Toggle Button */}
+          {/* Voice Record / Pause Toggle Button */}
           {onToggleListening && (
             <Button
               type="button"
@@ -114,20 +147,20 @@ export function ChatInput({
               className={cn(
                 "flex items-center justify-center gap-1.5 px-3 h-9 sm:h-8 text-xs font-semibold rounded-input transition-all",
                 isListening
-                  ? "bg-primary text-white animate-pulse hover:bg-primary/90"
+                  ? "bg-red-500 hover:bg-red-600 text-white shadow-sm animate-pulse border-red-500"
                   : "border-border text-text-secondary hover:text-text-primary hover:border-primary/40"
               )}
-              title={isListening ? "Stop and submit speech" : "Speak using microphone"}
+              title={isListening ? "Pause recording" : text.trim() ? "Resume recording" : "Record voice"}
             >
               {isListening ? (
                 <>
-                  <Square className="w-3.5 h-3.5 fill-current" />
-                  <span className="hidden xs:inline">Done Speaking</span>
+                  <Pause className="w-3.5 h-3.5 fill-current" />
+                  <span className="hidden xs:inline">Pause</span>
                 </>
               ) : (
                 <>
                   <Mic className="w-3.5 h-3.5" />
-                  <span className="hidden xs:inline">Speak</span>
+                  <span className="hidden xs:inline">{text.trim() ? "Resume" : "Record"}</span>
                 </>
               )}
             </Button>

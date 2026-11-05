@@ -11,6 +11,7 @@ interface VoiceStatusBarProps {
   onToggleModality?: () => void;
   voiceState: VoiceState;
   interimTranscript?: string;
+  voiceTranscript?: string;
   error?: VoiceError | null;
   onClearError?: () => void;
   onStartListening?: () => void;
@@ -56,7 +57,7 @@ export function VoiceStatusBar({
               {voiceState === "LISTENING" && (
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary animate-pulse">
                   <span className="w-2 h-2 rounded-full bg-primary" />
-                  Listening...
+                  Recording... (Click Pause when done)
                 </span>
               )}
               {voiceState === "PROCESSING" && (
@@ -78,7 +79,7 @@ export function VoiceStatusBar({
                 </span>
               )}
               {voiceState === "IDLE" && (
-                <span className="text-xs text-text-secondary">Ready to speak</span>
+                <span className="text-xs text-text-secondary">Ready to record (Click Record to speak)</span>
               )}
               {voiceState === "ERROR" && (
                 <span className="inline-flex items-center gap-1 text-xs font-medium text-error">

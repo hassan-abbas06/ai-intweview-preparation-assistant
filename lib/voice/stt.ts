@@ -79,7 +79,7 @@ export class SpeechToTextEngine {
   /**
    * Starts continuous listening for candidate speech with active VAD.
    */
-  public async startListening(): Promise<boolean> {
+  public async startListening(clearBuffer: boolean = false): Promise<boolean> {
     if (this.isListening) return true;
 
     if (!this.isSupported()) {
@@ -99,7 +99,9 @@ export class SpeechToTextEngine {
 
     try {
       this.isListening = true;
-      this.accumulatedFinalTranscript = "";
+      if (clearBuffer) {
+        this.accumulatedFinalTranscript = "";
+      }
       this.latestInterim = "";
 
       // Initialize and start Voice Activity Detector on the active microphone stream
@@ -164,7 +166,7 @@ export class SpeechToTextEngine {
       this.recognition = new SpeechRecognitionClass();
       this.recognition.continuous = true;
       this.recognition.interimResults = true;
-      this.recognition.lang = "en-US";
+      this.recognition.lang = typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
       this.recognition.maxAlternatives = 1;
 
       this.recognition.onstart = () => {
@@ -333,7 +335,7 @@ export class SpeechToTextEngine {
     this.wasInterrupted = false;
 
     if (finalResult) {
-      this.callbacks.onStateChange?.("PROCESSING");
+      // Note: State machine transition to PROCESSING is handled by evaluateTurnSubmission inside onFinalTranscript
       this.callbacks.onFinalTranscript?.(finalResult, timing);
     } else {
       this.callbacks.onStateChange?.("IDLE");
@@ -347,6 +349,35 @@ export class SpeechToTextEngine {
   /**
    * Aborts listening immediately without producing a final transcript.
    */
+  /**
+   * Pauses listening without clearing the accumulated transcript or triggering submission.
+   */
+  public pauseListening(): string {
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
+    }
+
+    const currentResult = this.getCurrentTranscript();
+    this.isListening = false;
+
+    if (this.vad) {
+      this.vad.stop();
+    }
+
+    try {
+      if (this.recognition) {
+        this.recognition.stop();
+      }
+    } catch {
+      // Ignore
+    }
+
+    this.cleanupMediaStream();
+    this.callbacks.onStateChange?.("IDLE");
+    return currentResult;
+  }
+
   public abort(): void {
     this.isListening = false;
     if (this.restartTimeout) {

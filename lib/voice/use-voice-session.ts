@@ -71,6 +71,13 @@ export function useVoiceSession({
         setError(err);
         sm.handleError(err);
       },
+      onStateChange: (newState) => {
+        if (newState === "IDLE") {
+          sm.transition("IDLE", "STT idle");
+        } else if (newState === "ERROR") {
+          sm.transition("ERROR", "STT error");
+        }
+      },
     });
 
     // Wire TTS callbacks with StateMachine
@@ -140,9 +147,24 @@ export function useVoiceSession({
     return started;
   }, [enabled]);
 
+  const pauseListening = useCallback(() => {
+    if (!sttRef.current) return "";
+    const result = sttRef.current.pauseListening();
+    const sm = stateMachineRef.current;
+    if (sm.getState() === "LISTENING") {
+      sm.transition("IDLE", "User paused recording");
+    }
+    return result;
+  }, []);
+
   const stopListening = useCallback(() => {
     if (!sttRef.current) return "";
-    return sttRef.current.stopListening();
+    const result = sttRef.current.stopListening();
+    const sm = stateMachineRef.current;
+    if (!result && sm.getState() === "LISTENING") {
+      sm.transition("IDLE", "User stopped listening without speech");
+    }
+    return result;
   }, []);
 
   const speak = useCallback(
@@ -180,6 +202,7 @@ export function useVoiceSession({
     error,
     clearError,
     startListening,
+    pauseListening,
     stopListening,
     speak,
     stopSpeaking,
@@ -188,4 +211,3 @@ export function useVoiceSession({
     isTTSSupported: ttsRef.current ? ttsRef.current.isSupported() : false,
   };
 }
-
