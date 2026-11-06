@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -9,35 +9,35 @@
   --font-heading: 'Manrope', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  /* Light mode palette per design.md */
-  --primary: #3D6FB4;
-  --primary-dark: #1F3D63;
-  --primary-light: #6FA8E0;
-  --secondary: #7FB3A6;
-  --background: #F7F9FB;
+  /* Modern SaaS High-Tech Palette */
+  --primary: #2563EB;
+  --primary-dark: #1D4ED8;
+  --primary-light: #60A5FA;
+  --secondary: #0D9488;
+  --background: #F6F9FD;
   --surface: #FFFFFF;
-  --border: #DCE3EA;
-  --text-primary: #1E293B;
+  --border: #E2E8F0;
+  --text-primary: #0F172A;
   --text-secondary: #64748B;
-  --success: #4CAF7D;
-  --warning: #E0A458;
-  --error: #E2635F;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --error: #EF4444;
 }
 
 .dark {
-  /* Dark mode palette per design.md */
-  --primary: #6FA8E0;
-  --primary-dark: #3D6FB4;
-  --primary-light: #BFDAF5;
-  --secondary: #8FC3B6;
-  --background: #0F1A24;
-  --surface: #1B2735;
-  --border: #2C3B4B;
-  --text-primary: #E5EAF0;
+  /* Dark mode palette */
+  --primary: #3B82F6;
+  --primary-dark: #2563EB;
+  --primary-light: #93C5FD;
+  --secondary: #14B8A6;
+  --background: #0B1320;
+  --surface: #152238;
+  --border: #1E2E48;
+  --text-primary: #F8FAFC;
   --text-secondary: #94A3B8;
-  --success: #5FC490;
-  --warning: #EDB877;
-  --error: #E77E7A;
+  --success: #34D399;
+  --warning: #FBBF24;
+  --error: #F87171;
 }
 
 body {
@@ -47,13 +47,31 @@ body {
   min-height: 100vh;
   margin: 0;
   padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading), system-ui, -apple-system, sans-serif;
 }
 
-/* Suppress browser native password reveal/clear buttons to avoid duplicate icons */
+/* Custom modern scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+/* Suppress browser native password reveal/clear buttons */
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear,
 input[type="password"]::-webkit-credentials-auto-fill-button {

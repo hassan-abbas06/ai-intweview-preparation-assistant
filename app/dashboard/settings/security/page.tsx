@@ -218,24 +218,33 @@ export default function SecuritySettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-6 transition-colors">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#F6F9FD] dark:bg-[#0B1320] text-slate-900 dark:text-slate-100 p-4 sm:p-8 transition-colors relative overflow-hidden">
+      {/* Ambient background glows */}
+      <div className="absolute -top-32 -left-20 w-96 h-96 bg-blue-200/30 dark:bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-40 -right-20 w-96 h-96 bg-purple-200/30 dark:bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="max-w-2xl mx-auto space-y-6 relative z-10">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-border">
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-2 text-sm text-text-secondary hover:text-primary transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to Dashboard
-          </Link>
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200/80 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-heading font-extrabold text-sm shadow-sm shadow-blue-500/25 shrink-0" title="Home">
+              AI
+            </Link>
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400 hover:text-blue-600 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" /> Back to Dashboard
+            </Link>
+          </div>
           <ThemeToggle />
         </div>
 
         <div>
-          <h1 className="text-2xl font-bold font-heading text-text-primary">
+          <h1 className="text-xl sm:text-2xl font-bold font-heading text-slate-900 dark:text-white">
             Account & Security Settings
           </h1>
-          <p className="text-sm text-text-secondary mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             Manage your career interview track, profile preferences, and multi-factor authentication.
           </p>
         </div>

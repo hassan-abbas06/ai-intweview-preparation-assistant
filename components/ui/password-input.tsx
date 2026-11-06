@@ -19,7 +19,7 @@ export const PasswordInput = React.forwardRef<
       <input
         type={showPassword ? "text" : "password"}
         className={cn(
-          "flex h-10 w-full rounded-input border border-border bg-surface pl-3 pr-10 py-2 text-sm text-text-primary placeholder:text-text-secondary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-transparent disabled:cursor-not-allowed disabled:opacity-50 transition-colors shadow-soft [&::-ms-reveal]:hidden [&::-ms-clear]:hidden",
+          "flex h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/60 pl-3.5 pr-10 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 focus-visible:border-blue-500 disabled:cursor-not-allowed disabled:opacity-50 transition-all shadow-xs [&::-ms-reveal]:hidden [&::-ms-clear]:hidden",
           className
         )}
         ref={ref}
@@ -30,7 +30,7 @@ export const PasswordInput = React.forwardRef<
         type="button"
         onClick={() => setShowPassword((prev) => !prev)}
         disabled={disabled}
-        className="absolute right-0 top-0 h-full w-10 min-w-[40px] flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none disabled:opacity-50 rounded-r-input hover:bg-background/50 active:bg-background"
+        className="absolute right-0 top-0 h-full w-10 min-w-[40px] flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors focus:outline-none disabled:opacity-50 rounded-r-xl"
         aria-label={showPassword ? "Hide password" : "Show password"}
         tabIndex={-1}
       >

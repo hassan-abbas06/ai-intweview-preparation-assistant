@@ -251,12 +251,16 @@ export default function InterviewReportPage() {
 
   // 4. Ready or Partial Report View
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex items-center justify-between print:hidden">
+    <div className="min-h-screen bg-[#F6F9FD] dark:bg-[#0B1320] text-slate-900 dark:text-slate-100 p-4 sm:p-6 lg:p-8 transition-colors relative overflow-hidden">
+      {/* Ambient background glows */}
+      <div className="absolute -top-32 -left-20 w-96 h-96 bg-blue-200/30 dark:bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-40 -right-20 w-96 h-96 bg-sky-200/30 dark:bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="max-w-5xl mx-auto space-y-6 relative z-10">
+        <div className="flex items-center justify-between print:hidden pb-3 border-b border-slate-200/80 dark:border-slate-800">
           <Link
             href="/dashboard"
-            className="inline-flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+            className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 hover:text-blue-600 transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back to Candidate Dashboard
           </Link>

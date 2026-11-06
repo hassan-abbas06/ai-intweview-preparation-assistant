@@ -105,11 +105,19 @@ function LoginForm() {
   return (
     <div className="w-full max-w-md">
       <div className="text-center mb-6">
-        <h1 className="font-heading font-bold text-2xl text-text-primary tracking-tight">
-          AI Interview Prep
+        <Link href="/" className="inline-flex items-center gap-2 mb-3">
+          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-heading font-extrabold text-sm shadow-sm shadow-blue-500/25">
+            AI
+          </div>
+          <span className="font-heading font-bold text-base text-slate-900 dark:text-white">
+            Interview Prep Assistant
+          </span>
+        </Link>
+        <h1 className="font-heading font-bold text-2xl text-slate-900 dark:text-white tracking-tight">
+          Candidate Login
         </h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Sign in to your candidate account
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Access your mock interview sessions and ATS reports
         </p>
       </div>
 

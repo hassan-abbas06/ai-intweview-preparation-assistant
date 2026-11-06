@@ -39,7 +39,7 @@ export function VoiceStatusBar({
   const isVoice = modality === "VOICE";
 
   return (
-    <div className="w-full flex flex-col gap-2 p-3 rounded-2xl bg-surface border border-border shadow-soft transition-all">
+    <div className="w-full flex flex-col gap-2 p-3 rounded-2xl bg-white/95 dark:bg-slate-800/95 border border-slate-200/80 dark:border-slate-700/80 shadow-xs transition-all">
       {/* Top row: Status indicators, Accent selector & Modality Switcher */}
       <div className="flex items-center justify-between gap-2.5 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">

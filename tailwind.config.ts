@@ -30,8 +30,8 @@ const config: Config = {
         error: "var(--error)",
       },
       borderRadius: {
-        input: "8px",
-        card: "12px",
+        input: "12px",
+        card: "18px",
       },
       fontFamily: {
         heading: ["var(--font-heading)", "sans-serif"],
@@ -39,8 +39,10 @@ const config: Config = {
         mono: ["var(--font-mono)", "monospace"],
       },
       boxShadow: {
-        soft: "0 2px 8px -2px rgba(15, 26, 36, 0.05), 0 1px 4px -1px rgba(15, 26, 36, 0.03)",
-        "soft-md": "0 4px 14px -3px rgba(15, 26, 36, 0.08), 0 2px 6px -2px rgba(15, 26, 36, 0.04)",
+        xs: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+        soft: "0 2px 10px -2px rgba(15, 23, 42, 0.06), 0 1px 4px -1px rgba(15, 23, 42, 0.04)",
+        "soft-md": "0 6px 20px -3px rgba(15, 23, 42, 0.08), 0 2px 8px -2px rgba(15, 23, 42, 0.04)",
+        glow: "0 0 25px -5px rgba(37, 99, 235, 0.25)",
       },
     },
   },

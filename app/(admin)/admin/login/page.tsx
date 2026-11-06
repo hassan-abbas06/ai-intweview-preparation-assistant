@@ -113,13 +113,21 @@ export default function AdminLoginPage() {
 
       <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-input bg-primary/10 text-primary mb-3">
-            <Shield className="w-6 h-6" />
+          <Link href="/" className="inline-flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-heading font-extrabold text-sm shadow-sm shadow-blue-500/25">
+              AI
+            </div>
+            <span className="font-heading font-bold text-base text-slate-900 dark:text-white">
+              Interview Prep Assistant
+            </span>
+          </Link>
+          <div className="flex items-center justify-center w-11 h-11 rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400 mb-2 mx-auto">
+            <Shield className="w-5 h-5" />
           </div>
-          <h1 className="font-heading font-bold text-2xl text-text-primary tracking-tight">
+          <h1 className="font-heading font-bold text-2xl text-slate-900 dark:text-white tracking-tight">
             Administrative Portal
           </h1>
-          <p className="text-sm text-text-secondary mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             Privileged system console & security administration
           </p>
         </div>
