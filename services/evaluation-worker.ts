@@ -46,7 +46,7 @@ export interface CreateEvaluationJobInput {
 
 export interface ClaimJobOptions {
   workerId?: string;
-  leaseDurationMs?: number; // default: 60000ms (60s)
+  leaseDurationMs?: number; // default: 25000ms (25s)
   prismaClient?: typeof prisma;
   sessionId?: string;
 }
@@ -107,7 +107,7 @@ export class EvaluationWorker {
 
     const prismaClient = options.prismaClient || prisma;
     const workerId = options.workerId || this.generateWorkerId();
-    const leaseDurationMs = options.leaseDurationMs ?? 60000;
+    const leaseDurationMs = options.leaseDurationMs ?? 25000;
     const sessionId = options.sessionId ?? null;
     const now = new Date();
     const leaseExpiresAt = new Date(now.getTime() + leaseDurationMs);
@@ -130,7 +130,7 @@ export class EvaluationWorker {
         WHERE "id" = (
           SELECT "id" FROM "evaluation_jobs"
           WHERE ("status" = 'PENDING'::"EvaluationJobStatus"
-             OR ("status" = 'RETRYING'::"EvaluationJobStatus" AND ("next_retry_at" IS NULL OR "next_retry_at" <= NOW()))
+             OR ("status" = 'RETRYING'::"EvaluationJobStatus" AND ($3::text IS NOT NULL OR "next_retry_at" IS NULL OR "next_retry_at" <= NOW()))
              OR ("status" = 'PROCESSING'::"EvaluationJobStatus" AND "lease_expires_at" IS NOT NULL AND "lease_expires_at" <= NOW()))
             AND ($3::text IS NULL OR "session_id" = $3)
           ORDER BY "created_at" ASC
@@ -160,7 +160,7 @@ export class EvaluationWorker {
           leaseExpiresAt: row.lease_expires_at ? new Date(row.lease_expires_at) : (row.leaseExpiresAt ? new Date(row.leaseExpiresAt) : leaseExpiresAt),
           retryCount: row.retry_count || row.retryCount || 0,
           maxRetries: row.max_retries || row.maxRetries || 3,
-          timeoutMs: row.timeout_ms || row.timeoutMs || 5000,
+          timeoutMs: row.timeout_ms || row.timeoutMs || 12000,
           nextRetryAt: row.next_retry_at ? new Date(row.next_retry_at) : (row.nextRetryAt ? new Date(row.nextRetryAt) : null),
           evaluationResult: row.evaluation_result || row.evaluationResult,
           lastError: row.last_error || row.lastError,
@@ -180,7 +180,11 @@ export class EvaluationWorker {
           { status: "PENDING" },
           {
             status: "RETRYING",
-            OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+            OR: [
+              ...(sessionId ? [{}] : []),
+              { nextRetryAt: null },
+              { nextRetryAt: { lte: now } },
+            ],
           },
           {
             status: "PROCESSING",
@@ -234,7 +238,7 @@ export class EvaluationWorker {
   ): Promise<{ status: EvaluationJobStatus; result: TurnEvaluationRecord | null }> {
     const prismaClient = options?.prismaClient || prisma;
     const llmProvider = options?.llmProvider || getLLMProvider();
-    const timeoutMs = options?.timeoutMs || job.timeoutMs || 5000;
+    const timeoutMs = options?.timeoutMs || job.timeoutMs || 12000;
 
     // IDEMPOTENCY GUARD: A job already COMPLETED must never be evaluated again
     if (job.status === "COMPLETED" && job.evaluationResult) {
@@ -420,6 +424,20 @@ export class EvaluationWorker {
   /**
    * Processes all currently eligible pending, retrying, or expired jobs in batch.
    */
+  /**
+   * Helper to actively drain all pending or retrying evaluation jobs for a specific session.
+   */
+  static async drainSession(
+    sessionId: string,
+    maxDurationMs: number = 8000
+  ): Promise<number> {
+    return this.processAllPendingJobs({
+      sessionId,
+      maxDurationMs,
+      batchSize: 10,
+    });
+  }
+
   static async processAllPendingJobs(
     options?: ProcessAllOptions
   ): Promise<number> {

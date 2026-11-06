@@ -388,7 +388,7 @@ export class InterviewEvaluator {
       currentDifficulty = "INTERMEDIATE",
       roundType = "DOMAIN",
       llmProvider,
-      timeoutMs = 5000,
+      timeoutMs = 12000,
     } = input;
 
     // Fast-path bypass check

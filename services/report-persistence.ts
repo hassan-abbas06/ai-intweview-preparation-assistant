@@ -5,6 +5,7 @@ import {
   DeterministicReportPayload,
 } from "./report-generator";
 import { ReportSynthesizerService } from "./report-synthesizer";
+import { EvaluationWorker } from "./evaluation-worker";
 
 // ============================================================================
 // PHASE 4A-2 REPORT PERSISTENCE TYPES
@@ -67,13 +68,26 @@ export class ReportPersistenceService {
 
       // If existing is WAITING_FOR_EVALUATIONS, check if jobs have now finished
       if (existing.status === "WAITING_FOR_EVALUATIONS") {
-        const reconciliation = await DeterministicReportEngine.reconcileEvaluationJobs(
+        let reconciliation = await DeterministicReportEngine.reconcileEvaluationJobs(
           sessionId,
           prismaClient
         );
         if (!reconciliation.canAggregate) {
-          // Still waiting for background evaluations
-          return existing;
+          // Actively drain pending / retrying jobs for this session
+          try {
+            await EvaluationWorker.drainSession(sessionId, 6000);
+            reconciliation = await DeterministicReportEngine.reconcileEvaluationJobs(
+              sessionId,
+              prismaClient
+            );
+          } catch (drainErr) {
+            console.error("[Report Persistence] Error draining pending evaluation jobs:", drainErr);
+          }
+
+          if (!reconciliation.canAggregate) {
+            // Still waiting for remaining background evaluations
+            return existing;
+          }
         }
         // Jobs have finished! Proceed to update the existing row to READY/PARTIAL
         return this.executeAndPersistUpdate(sessionId, existing.id, prismaClient);
@@ -155,12 +169,24 @@ export class ReportPersistenceService {
     prismaClient: typeof prisma | Prisma.TransactionClient
   ): Promise<InterviewReport> {
     try {
-      // Deterministic report calculation using frozen Phase 4A-1 engine
-      const reportData: DeterministicReportPayload =
+      // Drain any pending jobs before deterministic calculation
+      let reportData: DeterministicReportPayload =
         await DeterministicReportEngine.generateDeterministicReport(
           sessionId,
           prismaClient
         );
+
+      if (reportData.status === "WAITING_FOR_EVALUATIONS") {
+        try {
+          await EvaluationWorker.drainSession(sessionId, 6000);
+          reportData = await DeterministicReportEngine.generateDeterministicReport(
+            sessionId,
+            prismaClient
+          );
+        } catch (drainErr) {
+          console.error("[Report Persistence] Error draining jobs during generation:", drainErr);
+        }
+      }
 
       let finalStatus: ReportStatus;
       if (reportData.status === "WAITING_FOR_EVALUATIONS") {

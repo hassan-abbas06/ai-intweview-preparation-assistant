@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState, useRef, useEffect } from "react";
-import { Send, Mic, Pause } from "lucide-react";
+import { Send, Mic, Pause, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ interface ChatInputProps {
   onToggleListening?: () => void;
   voiceState?: string;
   voiceTranscript?: string;
+  onTranscribeWhisper?: () => Promise<string | null>;
 }
 
 export function ChatInput({
@@ -24,8 +25,10 @@ export function ChatInput({
   onToggleListening,
   voiceState,
   voiceTranscript,
+  onTranscribeWhisper,
 }: ChatInputProps) {
   const [text, setText] = useState("");
+  const [isTranscribingWhisper, setIsTranscribingWhisper] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea height as content grows
@@ -48,25 +51,41 @@ export function ChatInput({
     prevDisabledRef.current = disabled;
   }, [disabled]);
 
-  // Synchronize live voice transcription into the textarea
-  const baseTextRef = useRef("");
-  const prevListeningRef = useRef(isListening);
+  // Track any text typed by hand prior to activating speech recording
+  const userTypedPrefixRef = useRef("");
+  const isPopulatedByVoiceRef = useRef(false);
 
+  // Synchronize live voice transcription into the textarea without duplicating
   useEffect(() => {
-    if (!prevListeningRef.current && isListening) {
-      // Just started or resumed recording: capture existing typed text as base
-      baseTextRef.current = text.trim();
-    }
-    prevListeningRef.current = isListening;
-  }, [isListening, text]);
+    if (isListening && voiceTranscript !== undefined) {
+      isPopulatedByVoiceRef.current = true;
+      const prefix = userTypedPrefixRef.current.trim();
+      const spoken = voiceTranscript.trim();
 
-  useEffect(() => {
-    if (isListening && voiceTranscript) {
-      const base = baseTextRef.current;
-      const combined = base ? `${base} ${voiceTranscript.trim()}` : voiceTranscript.trim();
-      setText(combined);
+      if (spoken) {
+        setText(prefix ? `${prefix} ${spoken}` : spoken);
+      } else if (!prefix) {
+        setText("");
+      }
     }
   }, [voiceTranscript, isListening]);
+
+  const handleWhisperEnhance = async () => {
+    if (!onTranscribeWhisper || isTranscribingWhisper) return;
+    setIsTranscribingWhisper(true);
+    try {
+      const enhanced = await onTranscribeWhisper();
+      if (enhanced) {
+        setText(enhanced);
+        userTypedPrefixRef.current = "";
+        isPopulatedByVoiceRef.current = true;
+      }
+    } catch (err) {
+      console.warn("Whisper enhance error:", err);
+    } finally {
+      setIsTranscribingWhisper(false);
+    }
+  };
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -79,7 +98,8 @@ export function ChatInput({
 
     onSendMessage(text.trim());
     setText("");
-    baseTextRef.current = "";
+    userTypedPrefixRef.current = "";
+    isPopulatedByVoiceRef.current = false;
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -115,7 +135,11 @@ export function ChatInput({
         value={text}
         onChange={(e) => {
           setText(e.target.value);
-          baseTextRef.current = e.target.value.trim();
+          // If the user manually edits while not recording, keep that as prefix
+          if (!isListening) {
+            userTypedPrefixRef.current = e.target.value;
+            isPopulatedByVoiceRef.current = false;
+          }
         }}
         onKeyDown={handleKeyDown}
         placeholder={effectivePlaceholder}
@@ -136,6 +160,28 @@ export function ChatInput({
         </span>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Optional Whisper AI transcription button for noisy environments */}
+          {isVoiceActive && onTranscribeWhisper && text.trim() && (
+            <Button
+              type="button"
+              onClick={handleWhisperEnhance}
+              disabled={disabled || isTranscribingWhisper}
+              size="sm"
+              variant="outline"
+              className="flex items-center gap-1.5 px-2.5 h-9 sm:h-8 text-xs font-medium border-primary/30 text-primary hover:bg-primary/10 rounded-input transition-all"
+              title="Clean up and enhance transcription using Whisper AI"
+            >
+              {isTranscribingWhisper ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5 text-primary" />
+              )}
+              <span className="hidden sm:inline">
+                {isTranscribingWhisper ? "Enhancing..." : "AI Enhance"}
+              </span>
+            </Button>
+          )}
+
           {/* Voice Record / Pause Toggle Button */}
           {onToggleListening && (
             <Button

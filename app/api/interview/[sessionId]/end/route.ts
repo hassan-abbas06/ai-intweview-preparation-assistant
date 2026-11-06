@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
 import { errorResponse } from "@/lib/api-response";
 import { ReportPersistenceService } from "@/services/report-persistence";
+import { EvaluationWorker } from "@/services/evaluation-worker";
 
 export const dynamic = "force-dynamic";
 
@@ -46,12 +47,14 @@ export async function POST(
       },
     });
 
-    // 2. Determine report state via Phase 4A-2 persistence service
-    // ARCHITECTURAL CONTRACT:
-    // - Does NOT claim pending EvaluationJobs
-    // - Does NOT retry EvaluationJobs
-    // - Does NOT call EvaluationWorker
-    // - Does NOT make LLM calls
+    // 2. Actively drain any remaining evaluation jobs for this session
+    try {
+      await EvaluationWorker.drainSession(sessionId, 8000);
+    } catch (drainErr) {
+      console.warn(`[End Session] Non-blocking worker drain error for ${sessionId}:`, drainErr);
+    }
+
+    // 3. Determine report state via persistence service
     let reportStatus: string = "WAITING_FOR_EVALUATIONS";
     try {
       const report = await ReportPersistenceService.getOrGenerateReport(sessionId);

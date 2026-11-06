@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
 import { errorResponse } from "@/lib/api-response";
 import { ReportPersistenceService } from "@/services/report-persistence";
+import { EvaluationWorker } from "@/services/evaluation-worker";
 import { InterviewDeletionService } from "@/services/interview-deletion";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +60,12 @@ export async function GET(
         return errorResponse("Report not found for this interview session.", 404);
       }
     } else if (reportRecord.status === "WAITING_FOR_EVALUATIONS") {
-      // Re-reconcile in case background evaluation worker has finished pending jobs
+      // Actively drain any pending/retrying jobs for this session so the user does not wait indefinitely
+      try {
+        await EvaluationWorker.drainSession(sessionId, 5000);
+      } catch (err) {
+        console.error(`[Report API] Drain error for session ${sessionId}:`, err);
+      }
       reportRecord = await ReportPersistenceService.getOrGenerateReport(sessionId);
     }
 

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { SpeechToTextEngine } from "./stt";
 import { TextToSpeechEngine } from "./tts";
 import { VoiceStateMachine } from "./state-machine";
-import { VoiceError, VoiceState, VADConfig, VoiceTurnTiming } from "./types";
+import { VoiceError, VoiceState, VADConfig, VoiceTurnTiming, SpeechLanguage } from "./types";
 
 interface UseVoiceSessionOptions {
   enabled: boolean;
@@ -20,6 +20,7 @@ export function useVoiceSession({
   const [voiceState, setVoiceState] = useState<VoiceState>("IDLE");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [error, setError] = useState<VoiceError | null>(null);
+  const [language, setLanguageState] = useState<SpeechLanguage>("en-IN");
 
   const sttRef = useRef<SpeechToTextEngine | null>(null);
   const ttsRef = useRef<TextToSpeechEngine | null>(null);
@@ -36,8 +37,11 @@ export function useVoiceSession({
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    const detectedLang = SpeechToTextEngine.detectDefaultLanguage();
+    setLanguageState(detectedLang);
+
     const sm = stateMachineRef.current;
-    const stt = new SpeechToTextEngine({}, vadConfig);
+    const stt = new SpeechToTextEngine({}, vadConfig, detectedLang);
     const tts = new TextToSpeechEngine();
 
     sttRef.current = stt;
@@ -128,7 +132,12 @@ export function useVoiceSession({
     }
   }, [enabled]);
 
-  const startListening = useCallback(async () => {
+  const setLanguage = useCallback((newLang: SpeechLanguage) => {
+    setLanguageState(newLang);
+    sttRef.current?.setLanguage(newLang);
+  }, []);
+
+  const startListening = useCallback(async (clearBuffer: boolean = false) => {
     if (!enabled || !sttRef.current) return false;
     setError(null);
     setInterimTranscript("");
@@ -140,7 +149,7 @@ export function useVoiceSession({
       ttsRef.current.stop();
     }
 
-    const started = await sttRef.current.startListening();
+    const started = await sttRef.current.startListening(clearBuffer);
     if (started) {
       sm.transition("LISTENING", "User started listening manually");
     }
@@ -165,6 +174,16 @@ export function useVoiceSession({
       sm.transition("IDLE", "User stopped listening without speech");
     }
     return result;
+  }, []);
+
+  const resetTranscript = useCallback(() => {
+    setInterimTranscript("");
+    sttRef.current?.resetTranscript();
+  }, []);
+
+  const transcribeWithWhisper = useCallback(async (): Promise<string | null> => {
+    if (!sttRef.current) return null;
+    return await sttRef.current.transcribeWithWhisper();
   }, []);
 
   const speak = useCallback(
@@ -199,6 +218,10 @@ export function useVoiceSession({
     voiceState,
     setVoiceState,
     interimTranscript,
+    language,
+    setLanguage,
+    resetTranscript,
+    transcribeWithWhisper,
     error,
     clearError,
     startListening,

@@ -1,4 +1,4 @@
-import { STTCallbacks, VoiceError, VoiceState, VADConfig, VoiceTurnTiming } from "./types";
+import { STTCallbacks, VoiceError, VoiceState, VADConfig, VoiceTurnTiming, SpeechLanguage } from "./types";
 import { VoiceActivityDetector } from "./vad";
 
 // Declarations for browser SpeechRecognition API
@@ -19,10 +19,85 @@ export class SpeechToTextEngine {
   private restartTimeout: NodeJS.Timeout | null = null;
   private lastInterviewerQuestionEndMs: number | null = null;
   private wasInterrupted = false;
+  private currentLanguage: string;
 
-  constructor(callbacks: STTCallbacks = {}, vadConfig: VADConfig = {}) {
+  // MediaRecorder for capturing high-fidelity audio chunks
+  private mediaRecorder: MediaRecorder | null = null;
+  private recordedChunks: Blob[] = [];
+
+  constructor(callbacks: STTCallbacks = {}, vadConfig: VADConfig = {}, initialLanguage?: string) {
     this.callbacks = callbacks;
     this.vadConfig = vadConfig;
+    this.currentLanguage = initialLanguage || SpeechToTextEngine.detectDefaultLanguage();
+  }
+
+  /**
+   * Intelligently selects the candidate's default speech accent locale.
+   * If in India (IST offset -330) or browser indicates Indian English, defaults to en-IN.
+   */
+  public static detectDefaultLanguage(): SpeechLanguage {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("preferred_speech_lang") as SpeechLanguage;
+        if (saved && ["en-IN", "en-US", "en-GB"].includes(saved)) {
+          return saved;
+        }
+      } catch {
+        // Ignore localStorage restrictions
+      }
+    }
+
+    // Indian Standard Time (IST) offset is -330 minutes
+    const offset = new Date().getTimezoneOffset();
+    if (offset === -330) {
+      return "en-IN";
+    }
+
+    if (typeof Intl !== "undefined") {
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz && (tz.includes("Calcutta") || tz.includes("Kolkata") || tz.includes("Asia/Colombo"))) {
+          return "en-IN";
+        }
+      } catch {
+        // Ignore
+      }
+    }
+
+    if (typeof navigator !== "undefined") {
+      const navLang = navigator.language || (navigator.languages && navigator.languages[0]) || "";
+      if (navLang.toLowerCase().includes("in")) {
+        return "en-IN";
+      }
+      if (navLang.toLowerCase().includes("gb")) {
+        return "en-GB";
+      }
+    }
+
+    // Default to en-IN for South Asian users, en-US fallback
+    return "en-IN";
+  }
+
+  public setLanguage(lang: SpeechLanguage): void {
+    this.currentLanguage = lang;
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("preferred_speech_lang", lang);
+      } catch {
+        // Ignore
+      }
+    }
+    if (this.recognition) {
+      try {
+        this.recognition.lang = lang;
+      } catch {
+        // Ignore
+      }
+    }
+  }
+
+  public getLanguage(): string {
+    return this.currentLanguage;
   }
 
   public setCallbacks(callbacks: STTCallbacks) {
@@ -36,7 +111,7 @@ export class SpeechToTextEngine {
   }
 
   /**
-   * Explicitly requests and verifies microphone hardware permissions.
+   * Explicitly requests and verifies microphone hardware permissions with high-fidelity speech filters.
    */
   public async requestMicrophonePermission(): Promise<boolean> {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
@@ -48,7 +123,15 @@ export class SpeechToTextEngine {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Apply echo cancellation, noise suppression, and auto gain control for clean acoustic formants
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      });
       this.mediaStream = stream;
       return true;
     } catch (err: any) {
@@ -77,7 +160,7 @@ export class SpeechToTextEngine {
   }
 
   /**
-   * Starts continuous listening for candidate speech with active VAD.
+   * Starts continuous listening for candidate speech with active VAD and audio buffering.
    */
   public async startListening(clearBuffer: boolean = false): Promise<boolean> {
     if (this.isListening) return true;
@@ -122,6 +205,9 @@ export class SpeechToTextEngine {
           this.vadConfig
         );
         this.vad.start(this.mediaStream);
+
+        // Optional MediaRecorder for capturing audio for Whisper fallback/enhancement
+        this.initMediaRecorder();
       }
 
       this.initRecognition();
@@ -136,6 +222,73 @@ export class SpeechToTextEngine {
       });
       this.callbacks.onStateChange?.("ERROR");
       return false;
+    }
+  }
+
+  /**
+   * Initializes audio recording for Whisper transcription fallback
+   */
+  private initMediaRecorder(): void {
+    if (typeof window === "undefined" || typeof MediaRecorder === "undefined" || !this.mediaStream) {
+      return;
+    }
+
+    try {
+      this.recordedChunks = [];
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : "";
+
+      const options = mimeType ? { mimeType } : undefined;
+      const mr = new MediaRecorder(this.mediaStream, options);
+
+      mr.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          this.recordedChunks.push(event.data);
+        }
+      };
+
+      this.mediaRecorder = mr;
+      mr.start(250);
+    } catch {
+      this.mediaRecorder = null;
+    }
+  }
+
+  /**
+   * Gets the recorded audio Blob for Whisper processing.
+   */
+  public getRecordedAudioBlob(): Blob | null {
+    if (this.recordedChunks.length === 0) return null;
+    const mime = this.recordedChunks[0]?.type || "audio/webm";
+    return new Blob(this.recordedChunks, { type: mime });
+  }
+
+  /**
+   * Transcribes the current audio buffer using the Groq Whisper API endpoint.
+   */
+  public async transcribeWithWhisper(): Promise<string | null> {
+    try {
+      const blob = this.getRecordedAudioBlob();
+      if (!blob || blob.size < 1000) return null;
+
+      const formData = new FormData();
+      formData.append("file", blob, "recording.webm");
+      formData.append("language", this.currentLanguage);
+
+      const res = await fetch("/api/voice/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.transcript || null;
+    } catch (err) {
+      console.warn("[Whisper Transcribe Error]:", err);
+      return null;
     }
   }
 
@@ -166,7 +319,7 @@ export class SpeechToTextEngine {
       this.recognition = new SpeechRecognitionClass();
       this.recognition.continuous = true;
       this.recognition.interimResults = true;
-      this.recognition.lang = typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
+      this.recognition.lang = this.currentLanguage;
       this.recognition.maxAlternatives = 1;
 
       this.recognition.onstart = () => {
@@ -187,11 +340,32 @@ export class SpeechToTextEngine {
         }
 
         if (finalChunk) {
-          this.accumulatedFinalTranscript += (this.accumulatedFinalTranscript ? " " : "") + finalChunk.trim();
+          const trimmedChunk = finalChunk.trim();
+          if (trimmedChunk) {
+            // Guard against duplicate final chunks re-emitted by continuous recognition instances
+            const currentWords = this.accumulatedFinalTranscript.split(/\s+/).filter(Boolean);
+            const chunkWords = trimmedChunk.split(/\s+/).filter(Boolean);
+
+            const isDuplicate =
+              currentWords.length > 0 &&
+              chunkWords.length > 0 &&
+              currentWords.slice(-chunkWords.length).join(" ").toLowerCase() === chunkWords.join(" ").toLowerCase();
+
+            if (!isDuplicate) {
+              this.accumulatedFinalTranscript = [this.accumulatedFinalTranscript, trimmedChunk]
+                .filter(Boolean)
+                .join(" ")
+                .trim();
+            }
+          }
         }
         this.latestInterim = interim.trim();
 
-        const currentDisplay = [this.accumulatedFinalTranscript, this.latestInterim].filter(Boolean).join(" ").trim();
+        const currentDisplay = [this.accumulatedFinalTranscript, this.latestInterim]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+
         this.callbacks.onTranscriptChange?.(currentDisplay);
       };
 
@@ -235,12 +409,12 @@ export class SpeechToTextEngine {
           this.restartTimeout = setTimeout(() => {
             if (this.isListening) {
               try {
-                this.recognition?.start();
+                this.initRecognition();
               } catch {
                 // Ignore if already active
               }
             }
-          }, 80);
+          }, 120);
         }
       };
 
@@ -302,6 +476,7 @@ export class SpeechToTextEngine {
   public resetTranscript(): void {
     this.accumulatedFinalTranscript = "";
     this.latestInterim = "";
+    this.recordedChunks = [];
     this.callbacks.onTranscriptChange?.("");
   }
 
@@ -321,6 +496,14 @@ export class SpeechToTextEngine {
       this.vad.stop();
     }
 
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+      try {
+        this.mediaRecorder.stop();
+      } catch {
+        // Ignore
+      }
+    }
+
     try {
       if (this.recognition) {
         this.recognition.stop();
@@ -335,7 +518,6 @@ export class SpeechToTextEngine {
     this.wasInterrupted = false;
 
     if (finalResult) {
-      // Note: State machine transition to PROCESSING is handled by evaluateTurnSubmission inside onFinalTranscript
       this.callbacks.onFinalTranscript?.(finalResult, timing);
     } else {
       this.callbacks.onStateChange?.("IDLE");
@@ -346,9 +528,6 @@ export class SpeechToTextEngine {
     return finalResult;
   }
 
-  /**
-   * Aborts listening immediately without producing a final transcript.
-   */
   /**
    * Pauses listening without clearing the accumulated transcript or triggering submission.
    */
@@ -363,6 +542,14 @@ export class SpeechToTextEngine {
 
     if (this.vad) {
       this.vad.stop();
+    }
+
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+      try {
+        this.mediaRecorder.pause();
+      } catch {
+        // Ignore
+      }
     }
 
     try {
@@ -386,6 +573,7 @@ export class SpeechToTextEngine {
     }
     this.accumulatedFinalTranscript = "";
     this.latestInterim = "";
+    this.recordedChunks = [];
 
     if (this.vad) {
       this.vad.stop();
@@ -425,6 +613,15 @@ export class SpeechToTextEngine {
       this.vad.cleanup();
       this.vad = null;
     }
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+      try {
+        this.mediaRecorder.stop();
+      } catch {
+        // Ignore
+      }
+    }
+    this.mediaRecorder = null;
+    this.recordedChunks = [];
     this.cleanupMediaStream();
     if (this.recognition) {
       try {

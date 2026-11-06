@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Mic, MicOff, Volume2, VolumeX, AlertCircle, RefreshCw, Radio } from "lucide-react";
+import { Mic, Volume2, VolumeX, AlertCircle, RefreshCw, Radio, Globe } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { VoiceState, VoiceError } from "@/lib/voice/types";
+import { VoiceState, VoiceError, SpeechLanguage } from "@/lib/voice/types";
 
 interface VoiceStatusBarProps {
   modality: "TEXT" | "VOICE";
@@ -17,6 +17,9 @@ interface VoiceStatusBarProps {
   onStartListening?: () => void;
   onStopListening?: () => void;
   onStopSpeaking?: () => void;
+  onResetTranscript?: () => void;
+  language?: SpeechLanguage;
+  onLanguageChange?: (lang: SpeechLanguage) => void;
   disabled?: boolean;
 }
 
@@ -27,18 +30,19 @@ export function VoiceStatusBar({
   interimTranscript,
   error,
   onClearError,
-  onStartListening,
-  onStopListening,
   onStopSpeaking,
+  onResetTranscript,
+  language = "en-IN",
+  onLanguageChange,
   disabled,
 }: VoiceStatusBarProps) {
   const isVoice = modality === "VOICE";
 
   return (
     <div className="w-full flex flex-col gap-2 p-3 rounded-2xl bg-surface border border-border shadow-soft transition-all">
-      {/* Top row: Status indicators & Modality Switcher */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
+      {/* Top row: Status indicators, Accent selector & Modality Switcher */}
+      <div className="flex items-center justify-between gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {isVoice ? (
             <Badge variant="primary" className="flex items-center gap-1.5 px-2.5 py-1 text-xs">
               <Radio className="w-3.5 h-3.5 animate-pulse text-white" />
@@ -49,6 +53,23 @@ export function VoiceStatusBar({
               <span className="w-2 h-2 rounded-full bg-text-secondary/50" />
               <span>Text Mode</span>
             </Badge>
+          )}
+
+          {/* Accent / Speech Recognition Locale Selector */}
+          {isVoice && onLanguageChange && (
+            <div className="flex items-center gap-1 text-xs text-text-secondary bg-surface-secondary/70 px-2 py-0.5 rounded-lg border border-border/60">
+              <Globe className="w-3.5 h-3.5 text-primary" />
+              <select
+                value={language}
+                onChange={(e) => onLanguageChange(e.target.value as SpeechLanguage)}
+                className="bg-transparent text-[11px] font-medium text-text-primary focus:outline-none cursor-pointer py-0.5"
+                title="Select your spoken accent for best recognition accuracy"
+              >
+                <option value="en-IN">🇮🇳 English (India)</option>
+                <option value="en-US">🇺🇸 English (US)</option>
+                <option value="en-GB">🇬🇧 English (UK)</option>
+              </select>
+            </div>
           )}
 
           {/* Voice State Badge */}
@@ -140,16 +161,28 @@ export function VoiceStatusBar({
 
       {/* Interim Speech Preview */}
       {isVoice && (voiceState === "LISTENING" || interimTranscript) && (
-        <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 text-xs text-text-primary animate-fade-in flex items-start gap-2">
-          <Mic className="w-4 h-4 text-primary shrink-0 mt-0.5 animate-pulse" />
-          <div className="space-y-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-              Live Transcript
-            </span>
-            <p className="italic text-text-primary leading-relaxed">
-              {interimTranscript || "Listening... speak now"}
-            </p>
+        <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 text-xs text-text-primary animate-fade-in flex items-start justify-between gap-2">
+          <div className="flex items-start gap-2">
+            <Mic className="w-4 h-4 text-primary shrink-0 mt-0.5 animate-pulse" />
+            <div className="space-y-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                Live Transcript
+              </span>
+              <p className="italic text-text-primary leading-relaxed">
+                {interimTranscript || "Listening... speak now"}
+              </p>
+            </div>
           </div>
+          {Boolean(interimTranscript && onResetTranscript) && (
+            <button
+              type="button"
+              onClick={onResetTranscript}
+              className="text-[11px] text-text-secondary hover:text-error shrink-0 font-medium underline transition-colors"
+              title="Clear transcript"
+            >
+              Clear
+            </button>
+          )}
         </div>
       )}
     </div>

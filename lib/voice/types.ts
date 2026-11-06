@@ -7,6 +7,20 @@ export type VoiceState =
   | "INTERRUPTED"
   | "ERROR";
 
+export type SpeechLanguage = "en-IN" | "en-US" | "en-GB";
+
+export interface SpeechLanguageOption {
+  code: SpeechLanguage;
+  label: string;
+  flag: string;
+}
+
+export const SUPPORTED_SPEECH_LANGUAGES: SpeechLanguageOption[] = [
+  { code: "en-IN", label: "English (India)", flag: "🇮🇳" },
+  { code: "en-US", label: "English (US)", flag: "🇺🇸" },
+  { code: "en-GB", label: "English (UK)", flag: "🇬🇧" },
+];
+
 export type VoiceErrorType =
   | "PERMISSION_DENIED"
   | "NOT_SUPPORTED"
@@ -63,4 +77,3 @@ export interface TTSCallbacks {
   onInterrupted?: () => void;
   onError?: (error: VoiceError) => void;
 }
-

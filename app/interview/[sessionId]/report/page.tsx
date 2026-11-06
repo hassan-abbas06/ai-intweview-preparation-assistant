@@ -93,7 +93,7 @@ export default function InterviewReportPage() {
       pollTimerRef.current = setInterval(() => {
         setPollAttempt((prev) => prev + 1);
         fetchReport();
-      }, 3000);
+      }, 2000);
 
       return () => {
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -165,9 +165,20 @@ export default function InterviewReportPage() {
             <span className="font-mono text-[11px]">Poll #{pollAttempt + 1}</span>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 flex flex-col gap-2">
+            {pollAttempt >= 3 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchReport(true)}
+                className="text-xs font-medium text-primary hover:bg-primary/5 border-primary/20"
+              >
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Finalize &amp; Refresh Report Now
+              </Button>
+            )}
             <Link href="/dashboard">
-              <Button variant="ghost" size="sm" className="text-xs text-text-secondary">
+              <Button variant="ghost" size="sm" className="text-xs text-text-secondary w-full">
                 Return to Dashboard while waiting
               </Button>
             </Link>

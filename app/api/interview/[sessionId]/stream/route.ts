@@ -353,14 +353,13 @@ export async function POST(
             contextHistory: contextSnapshot,
             status: "PENDING",
             maxRetries: 3,
-            timeoutMs: 5000,
+            timeoutMs: 12000,
           },
         });
       });
 
-      // Fire non-blocking asynchronous evaluation dispatch
-      EvaluationWorker.claimNextJob()
-        .then((job) => job && EvaluationWorker.processJob(job))
+      // Fire non-blocking asynchronous evaluation dispatch for this session
+      EvaluationWorker.processAllPendingJobs({ sessionId, maxDurationMs: 8000, batchSize: 5 })
         .catch((err) => console.error("[Background Evaluation Trigger Error]:", err));
     } catch (txErr: any) {
       // Fallback: If evaluation job already exists or concurrency retry occurs,

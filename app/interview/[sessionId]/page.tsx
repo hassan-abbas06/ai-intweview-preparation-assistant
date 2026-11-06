@@ -729,6 +729,9 @@ export default function InterviewSessionPage() {
               onStartListening={voiceSession.startListening}
               onStopListening={voiceSession.stopListening}
               onStopSpeaking={voiceSession.stopSpeaking}
+              onResetTranscript={voiceSession.resetTranscript}
+              language={voiceSession.language}
+              onLanguageChange={voiceSession.setLanguage}
               disabled={isStreaming}
             />
           )}
@@ -748,6 +751,7 @@ export default function InterviewSessionPage() {
               }}
               voiceState={voiceSession.voiceState}
               voiceTranscript={voiceSession.interimTranscript}
+              onTranscribeWhisper={voiceSession.transcribeWithWhisper}
               placeholder={
                 isStreaming
                   ? "Interviewer is responding..."
