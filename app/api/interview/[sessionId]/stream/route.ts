@@ -116,6 +116,12 @@ export async function POST(
       });
       const openingInstruction = buildOpeningPrompt({ state: interviewState });
 
+      const persona = getPersonaForInterview(
+        interviewSession.type,
+        interviewSession.difficulty,
+        interviewSession.domain
+      );
+
       const customStream = new ReadableStream({
         async start(controller) {
           const tStreamStart = Date.now();
@@ -134,54 +140,29 @@ export async function POST(
               )
             );
 
-            // Pre-delivery generation with hard diversity validation
-            let generatedText = await llm.generateText({
-              messages: [{ role: "user", content: openingInstruction }],
-              systemInstruction: systemPrompt,
-              temperature: 0.5,
-              maxOutputTokens: 200,
-            });
+            // Generate opening question directly from openingInstruction and persona context
+            let generatedText = "";
+            try {
+              generatedText = await llm.generateText({
+                messages: [{ role: "user", content: openingInstruction }],
+                systemInstruction: systemPrompt,
+                temperature: 0.5,
+                maxOutputTokens: 150,
+              });
+            } catch (genErr) {
+              console.warn("[Opening Question Generation Fallback]:", genErr);
+              generatedText = persona.sampleOpening;
+            }
 
-            // Validate against past cross-session history
-            let validation = validateCandidateQuestion(
-              generatedText,
-              crossSessionHistory,
-              { targetPillarIndex: 0 }
-            );
-
-            if (!validation.isValid) {
-              console.warn(
-                `[Diversity Guardrail] Opening question collision: "${generatedText}" matched "${validation.collidedQuestion}". Reason: ${validation.reason}. Regenerating...`
-              );
-              const retryInstruction = `${openingInstruction}\n\nIMPORTANT: The candidate was already asked "${validation.collidedQuestion}". Introduce a fresh, distinct scenario focusing on ${validation.suggestedAlternativeArchetype || "a different technical context"}.`;
-              try {
-                const alternativeText = await llm.generateText({
-                  messages: [{ role: "user", content: retryInstruction }],
-                  systemInstruction: systemPrompt,
-                  temperature: 0.7,
-                  maxOutputTokens: 200,
-                });
-                const secondValidation = validateCandidateQuestion(
-                  alternativeText,
-                  crossSessionHistory,
-                  { targetPillarIndex: 0 }
-                );
-                if (secondValidation.isValid) {
-                  generatedText = alternativeText;
-                } else {
-                  generatedText = getDiverseFallbackQuestion(
-                    0,
-                    orchestratorDecision.targetPillarName,
-                    interviewSession.domain
-                  );
-                }
-              } catch (altErr) {
-                generatedText = getDiverseFallbackQuestion(
-                  0,
-                  orchestratorDecision.targetPillarName,
-                  interviewSession.domain
-                );
-              }
+            // Guard: Never allow opening turn to skip intro and jump to technical scenarios
+            const lowerOpening = (generatedText || "").toLowerCase();
+            if (
+              !generatedText.trim() ||
+              lowerOpening.includes("covered your background") ||
+              lowerOpening.includes("jump straight into") ||
+              lowerOpening.includes("skip the pleasantries")
+            ) {
+              generatedText = persona.sampleOpening;
             }
 
             // Clean text before streaming so internal tokens are NEVER sent over SSE
@@ -218,20 +199,6 @@ export async function POST(
                   role: "assistant",
                   content: cleanOpeningText,
                 },
-              });
-
-              // Atomically record question into persistent QuestionHistory
-              await QuestionDiversityService.recordQuestion({
-                userId: interviewSession.userId,
-                sessionId,
-                questionText: cleanOpeningText,
-                pillarIndex: 0,
-                pillarSlug: "PILLAR-0",
-                pillarName: orchestratorDecision.targetPillarName || "System Architecture",
-                track: interviewSession.type,
-                domain: interviewSession.domain,
-                difficulty: interviewSession.difficulty,
-                questionType: "OPENING",
               });
 
               const donePayload = `data: ${JSON.stringify({
