@@ -148,19 +148,196 @@ export const MANAGERIAL_PILLARS: PillarDefinition[] = [
   },
 ];
 
+export const FINANCE_PILLARS: PillarDefinition[] = [
+  {
+    index: 0,
+    name: "Financial Modeling, Valuation & DCF Methodologies",
+    description: "Discounted Cash Flow (DCF), WACC calculation, Comparable Company Analysis, Precedent Transactions, LBO modeling, and valuation sensitivity.",
+    coreConcepts: ["DCF", "WACC", "valuation multiples", "terminal value", "sensitivity analysis"],
+  },
+  {
+    index: 1,
+    name: "Financial Statements Analysis & Cash Flow Dynamics",
+    description: "Interconnection of Income Statement, Balance Sheet, and Cash Flow Statement; working capital cycles, EBITDA adjustments, and cash conversion.",
+    coreConcepts: ["EBITDA", "working capital", "free cash flow", "balance sheet", "revenue recognition"],
+  },
+  {
+    index: 2,
+    name: "Corporate Finance, Capital Structure & Debt/Equity",
+    description: "Capital structure optimization, cost of debt vs. equity, dividend policy, debt covenants, CapEx budgeting, and return on invested capital (ROIC).",
+    coreConcepts: ["capital structure", "cost of capital", "debt covenants", "ROIC", "capital allocation"],
+  },
+  {
+    index: 3,
+    name: "Portfolio Theory, Risk Management & Derivatives",
+    description: "Value at Risk (VaR), portfolio diversification, Sharpe ratio, FX/interest rate hedging strategies, and credit risk evaluation.",
+    coreConcepts: ["risk management", "VaR", "portfolio diversification", "hedging", "derivatives"],
+  },
+  {
+    index: 4,
+    name: "Market Macroeconomics, M&A Strategy & Regulatory Standards",
+    description: "Mergers & Acquisitions (M&A) accretion/dilution, strategic synergies, transaction due diligence, interest rate cycles, and financial regulations.",
+    coreConcepts: ["M&A", "accretion dilution", "due diligence", "synergies", "macroeconomics"],
+  },
+];
+
+export const ACCOUNTING_PILLARS: PillarDefinition[] = [
+  {
+    index: 0,
+    name: "Financial Reporting & GAAP / IFRS Principles",
+    description: "GAAP vs. IFRS differences, fair value measurement, revenue recognition (ASC 606), lease accounting (ASC 842), and disclosure standards.",
+    coreConcepts: ["GAAP", "IFRS", "ASC 606", "fair value", "disclosures"],
+  },
+  {
+    index: 1,
+    name: "General Ledger, Double-Entry & Account Reconciliations",
+    description: "Debit/credit journal mechanics, trial balance validation, bank reconciliations, accruals, and month-end close procedures.",
+    coreConcepts: ["journal entries", "general ledger", "reconciliation", "accruals", "month-end close"],
+  },
+  {
+    index: 2,
+    name: "Revenue Recognition, Matching Principle & Working Capital",
+    description: "Milestone-based revenue, matching expenses to revenues, allowance for doubtful accounts, and inventory accounting (FIFO, LIFO).",
+    coreConcepts: ["revenue recognition", "matching principle", "bad debt reserve", "inventory valuation", "amortization"],
+  },
+  {
+    index: 3,
+    name: "Internal Controls, Audit Procedures & SOX Compliance",
+    description: "Sarbanes-Oxley (SOX 404), segregation of duties, internal control testing, audit trail integrity, and substantive testing.",
+    coreConcepts: ["internal controls", "SOX compliance", "audit trail", "segregation of duties", "risk assessment"],
+  },
+  {
+    index: 4,
+    name: "Tax Accounting, Depreciation & Statutory Compliance",
+    description: "MACRS vs. straight-line depreciation, deferred tax assets and liabilities (ASC 740), book vs. tax adjustments, and compliance.",
+    coreConcepts: ["depreciation", "deferred tax", "tax compliance", "book tax differences", "statutory reporting"],
+  },
+];
+
+export const DATA_SCIENCE_PILLARS: PillarDefinition[] = [
+  {
+    index: 0,
+    name: "Statistical Foundations & Exploratory Data Analysis",
+    description: "Hypothesis testing, p-values, probability distributions, sampling bias, statistical significance, and exploratory data analysis.",
+    coreConcepts: ["hypothesis testing", "p-values", "distributions", "sampling", "statistical significance"],
+  },
+  {
+    index: 1,
+    name: "Feature Engineering & Data Preprocessing",
+    description: "Imputation strategies, categorical encoding, feature scaling, dimensionality reduction (PCA), and feature selection techniques.",
+    coreConcepts: ["feature engineering", "imputation", "PCA", "scaling", "data cleaning"],
+  },
+  {
+    index: 2,
+    name: "Machine Learning Algorithms & Model Selection",
+    description: "Supervised and unsupervised models, decision trees, gradient boosting (XGBoost), regression, clustering, and neural networks.",
+    coreConcepts: ["supervised learning", "XGBoost", "regression", "clustering", "neural networks"],
+  },
+  {
+    index: 3,
+    name: "Model Evaluation, Validation & Overfitting Prevention",
+    description: "Cross-validation, ROC-AUC, Precision/Recall, F1-score, bias-variance tradeoff, and L1/L2 regularization.",
+    coreConcepts: ["ROC-AUC", "cross-validation", "overfitting", "precision recall", "regularization"],
+  },
+  {
+    index: 4,
+    name: "MLOps, Model Deployment & Production Monitoring",
+    description: "Model serving, latency optimization, data and concept drift detection, A/B testing models, and model interpretability (SHAP).",
+    coreConcepts: ["MLOps", "model drift", "model deployment", "SHAP", "monitoring"],
+  },
+];
+
+export const DATA_ANALYTICS_PILLARS: PillarDefinition[] = [
+  {
+    index: 0,
+    name: "Advanced SQL & Complex Data Querying",
+    description: "Window functions (ROW_NUMBER, RANK, LEAD/LAG), CTEs, complex joins, subqueries, and analytical query performance.",
+    coreConcepts: ["window functions", "CTEs", "joins", "SQL optimization", "aggregations"],
+  },
+  {
+    index: 1,
+    name: "Business Metrics, KPIs & Funnel Analytics",
+    description: "LTV, CAC, churn rate, retention cohorts, revenue attribution, conversion funnels, and metric definitions.",
+    coreConcepts: ["KPIs", "cohort analysis", "churn", "LTV", "funnels"],
+  },
+  {
+    index: 2,
+    name: "Data Cleaning, Warehousing & Dimensional Modeling",
+    description: "Star schema, fact and dimension tables, ETL/ELT pipelines, data hygiene, and warehouse modeling (Snowflake/BigQuery).",
+    coreConcepts: ["dimensional modeling", "star schema", "ETL", "data warehouse", "data cleaning"],
+  },
+  {
+    index: 3,
+    name: "Data Visualization & Executive Dashboard Design",
+    description: "Dashboard layout strategy, visual best practices, BI tooling (Tableau/PowerBI/Looker), and communicating insights to stakeholders.",
+    coreConcepts: ["dashboards", "data visualization", "storytelling", "reporting", "BI tools"],
+  },
+  {
+    index: 4,
+    name: "Experimentation, A/B Testing & Statistical Rigor",
+    description: "Sample sizing, statistical significance, confidence intervals, interpreting conflicting metrics, and business recommendations.",
+    coreConcepts: ["A/B testing", "statistical significance", "experimentation", "hypothesis", "sample size"],
+  },
+];
+
+export const CYBERSECURITY_PILLARS: PillarDefinition[] = [
+  {
+    index: 0,
+    name: "Threat Modeling, Attack Vectors & Risk Assessment",
+    description: "STRIDE framework, attack trees, CVSS vulnerability scoring, threat surface mapping, and risk prioritization.",
+    coreConcepts: ["threat modeling", "STRIDE", "CVSS", "attack vectors", "risk assessment"],
+  },
+  {
+    index: 1,
+    name: "Network Defense, Boundary Controls & Zero Trust",
+    description: "Firewalls, micro-segmentation, Zero Trust architecture, VPNs, DDoS mitigation, and intrusion prevention (IDS/IPS).",
+    coreConcepts: ["Zero Trust", "firewalls", "segmentation", "DDoS", "IDS/IPS"],
+  },
+  {
+    index: 2,
+    name: "Identity & Access Management (IAM) & Authentication",
+    description: "MFA, OAuth2/SAML, Role-Based Access Control (RBAC), Least Privilege principles, and credential lifecycle.",
+    coreConcepts: ["IAM", "RBAC", "MFA", "least privilege", "OAuth2"],
+  },
+  {
+    index: 3,
+    name: "Incident Response, Digital Forensics & Threat Hunting",
+    description: "SIEM log correlation, incident containment, forensic root-cause analysis, threat hunting, and post-incident response.",
+    coreConcepts: ["incident response", "SIEM", "forensics", "containment", "threat hunting"],
+  },
+  {
+    index: 4,
+    name: "Cryptography, Application Security & Compliance",
+    description: "Encryption standards (TLS/AES), OWASP Top 10, penetration testing, compliance standards (SOC 2, ISO 27001), and secure coding.",
+    coreConcepts: ["cryptography", "OWASP", "penetration testing", "SOC 2", "compliance"],
+  },
+];
+
 /**
- * Returns the pillar definitions for a given interview round type
+ * Returns the pillar definitions for a given interview round type and domain
  */
-export function getPillarsForRound(type: InterviewType): PillarDefinition[] {
-  switch (type) {
-    case "HR":
-      return HR_PILLARS;
-    case "MANAGERIAL":
-      return MANAGERIAL_PILLARS;
-    case "DOMAIN":
-    default:
-      return TECHNICAL_PILLARS;
+export function getPillarsForRound(type: InterviewType, domain?: string | null): PillarDefinition[] {
+  if (type === "HR") return HR_PILLARS;
+  if (type === "MANAGERIAL") return MANAGERIAL_PILLARS;
+
+  const normalizedDomain = (domain || "").toLowerCase().trim();
+  if (normalizedDomain.includes("finance")) {
+    return FINANCE_PILLARS;
   }
+  if (normalizedDomain.includes("account")) {
+    return ACCOUNTING_PILLARS;
+  }
+  if (normalizedDomain.includes("data_science") || normalizedDomain.includes("data science")) {
+    return DATA_SCIENCE_PILLARS;
+  }
+  if (normalizedDomain.includes("data_analytic") || normalizedDomain.includes("data analytic") || normalizedDomain.includes("analytics")) {
+    return DATA_ANALYTICS_PILLARS;
+  }
+  if (normalizedDomain.includes("cyber") || normalizedDomain.includes("security")) {
+    return CYBERSECURITY_PILLARS;
+  }
+
+  return TECHNICAL_PILLARS;
 }
 
 /**
@@ -218,7 +395,7 @@ export class InterviewOrchestrator {
    */
   static decideNextStep(input: OrchestratorInput): OrchestratorDecision {
     const { state, candidateMessage, isOpening, options } = input;
-    const pillars = getPillarsForRound(state.type);
+    const pillars = getPillarsForRound(state.type, state.domain);
     const totalPillars = pillars.length;
 
     // 1. Check Candidate Intent to End

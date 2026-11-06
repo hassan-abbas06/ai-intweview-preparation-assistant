@@ -162,7 +162,7 @@ export class SpeechToTextEngine {
   /**
    * Starts continuous listening for candidate speech with active VAD and audio buffering.
    */
-  public async startListening(clearBuffer: boolean = false): Promise<boolean> {
+  public async startListening(clearBuffer: boolean = true): Promise<boolean> {
     if (this.isListening) return true;
 
     if (!this.isSupported()) {
@@ -184,6 +184,9 @@ export class SpeechToTextEngine {
       this.isListening = true;
       if (clearBuffer) {
         this.accumulatedFinalTranscript = "";
+        this.latestInterim = "";
+        this.recordedChunks = [];
+        this.callbacks.onTranscriptChange?.("");
       }
       this.latestInterim = "";
 
@@ -196,7 +199,7 @@ export class SpeechToTextEngine {
             },
             onSpeechEnd: () => {
               this.callbacks.onSpeechEnd?.();
-              this.handleAutoEndOfTurn();
+              // Do NOT auto-submit turn on pause. The candidate submits via Enter or Send button.
             },
             onError: (err) => {
               console.warn("[VAD Warning]:", err.message);

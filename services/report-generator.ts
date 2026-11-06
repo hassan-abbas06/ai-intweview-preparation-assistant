@@ -315,9 +315,10 @@ export class DeterministicReportEngine {
   static buildPillarReports(
     roundType: InterviewType,
     rawMastery: SessionMasteryState | null | undefined,
-    completedEvaluations: TurnEvaluationRecord[]
+    completedEvaluations: TurnEvaluationRecord[],
+    domain?: string | null
   ): PillarReportItem[] {
-    const canonicalPillars: PillarDefinition[] = getPillarsForRound(roundType);
+    const canonicalPillars: PillarDefinition[] = getPillarsForRound(roundType, domain);
     const pillarReports: PillarReportItem[] = [];
 
     const existingPillars = rawMastery?.pillars || {};
@@ -599,7 +600,8 @@ export class DeterministicReportEngine {
       const canonicalPillars = this.buildPillarReports(
         session.type,
         rawMastery,
-        completedEvaluations
+        completedEvaluations,
+        session.domain
       );
 
       return {
@@ -629,7 +631,8 @@ export class DeterministicReportEngine {
     const pillarScores = this.buildPillarReports(
       session.type,
       rawMastery,
-      completedEvaluations
+      completedEvaluations,
+      session.domain
     );
 
     // 5. Calculate overall score using zero-fabrication rules

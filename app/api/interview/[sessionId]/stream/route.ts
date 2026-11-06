@@ -19,6 +19,7 @@ import { EvaluationWorker } from "@/services/evaluation-worker";
 import { ResponseAnalyzerService } from "@/services/response-analyzer";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(
   req: NextRequest,
@@ -122,6 +123,17 @@ export async function POST(
           let activeProvider = "groq";
 
           try {
+            // Immediately dispatch stream metadata to confirm SSE transport and prevent proxy timeouts
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "meta",
+                  provider: activeProvider,
+                  model: activeModel,
+                })}\n\n`
+              )
+            );
+
             // Pre-delivery generation with hard diversity validation
             let generatedText = await llm.generateText({
               messages: [{ role: "user", content: openingInstruction }],
@@ -171,17 +183,6 @@ export async function POST(
                 );
               }
             }
-
-            // Stream metadata event
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  type: "meta",
-                  provider: activeProvider,
-                  model: activeModel,
-                })}\n\n`
-              )
-            );
 
             // Clean text before streaming so internal tokens are NEVER sent over SSE
             const cleanOpeningText = generatedText
@@ -413,6 +414,17 @@ export async function POST(
         let activeProvider = "groq";
 
         try {
+          // Immediately dispatch stream metadata to confirm SSE transport and prevent proxy timeouts
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: "meta",
+                provider: activeProvider,
+                model: activeModel,
+              })}\n\n`
+            )
+          );
+
           // Pre-delivery generation with hard diversity validation
           let generatedText = await llm.generateText({
             messages: historyMessages,
@@ -426,8 +438,9 @@ export async function POST(
             generatedText.includes(SESSION_END_TOKEN) ||
             orchestratorDecision.isTerminalTurn;
 
-          // Hard Diversity & Anti-Repetition Validation (only for active questions, not session conclusion)
-          if (!isSessionEnded) {
+          // Hard Diversity & Anti-Repetition Validation (skip for greetings and session conclusion)
+          const isGreetingAction = orchestratorDecision.action === "HANDLE_GREETING";
+          if (!isSessionEnded && !isGreetingAction) {
             const withinSessionQuestions = interviewSession.messages
               .filter((m) => m.role === "assistant")
               .map((m) => ({ questionText: m.content }));
@@ -510,17 +523,6 @@ Ensure the new question tests Pillar ${orchestratorDecision.targetPillarIndex + 
               }
             }
           }
-
-          // Stream metadata event
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "meta",
-                provider: activeProvider,
-                model: activeModel,
-              })}\n\n`
-            )
-          );
 
           // Clean text before streaming so internal tokens like [SESSION_COMPLETED] are NEVER sent over SSE
           const cleanAssistantText = generatedText

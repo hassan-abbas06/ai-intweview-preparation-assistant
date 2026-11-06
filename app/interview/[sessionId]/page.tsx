@@ -91,9 +91,8 @@ export default function InterviewSessionPage() {
   const handleSendMessageRef = useRef<(text: string, isFromVoice?: boolean, timing?: VoiceTurnTiming) => Promise<void>>();
 
   const handleVoiceTranscript = React.useCallback((transcript: string, timing?: VoiceTurnTiming) => {
-    if (transcript.trim()) {
-      handleSendMessageRef.current?.(transcript, true, timing);
-    }
+    // Voice speech streams live into ChatInput textarea.
+    // Turn submission only occurs explicitly when the candidate clicks Send or presses Enter.
   }, []);
 
   const voiceSession = useVoiceSession({
@@ -301,9 +300,10 @@ export default function InterviewSessionPage() {
 
     setError(null);
 
-    // Stop interviewer speech playback immediately if active
+    // Stop interviewer speech playback immediately if active and reset all transcript buffers
     voiceSessionRef.current?.stopSpeaking();
     voiceSessionRef.current?.pauseListening();
+    voiceSessionRef.current?.resetTranscript();
 
     // Optimistically add user message to UI
     const tempUserMsg: MessageItem = {
@@ -547,7 +547,7 @@ export default function InterviewSessionPage() {
 
   const isCompleted = session?.status === "COMPLETED";
   const persona = session
-    ? getPersonaForInterview(session.type, session.difficulty || "INTERMEDIATE")
+    ? getPersonaForInterview(session.type, session.difficulty || "INTERMEDIATE", session.domain)
     : null;
 
   return (
@@ -698,9 +698,18 @@ export default function InterviewSessionPage() {
 
           {/* Error Banner */}
           {error && (
-            <div className="p-3 rounded-input bg-error/15 border border-error/30 text-error text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
+            <div className="p-3 rounded-input bg-error/15 border border-error/30 text-error text-xs flex items-center justify-between gap-2 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="text-xs text-text-secondary hover:text-text-primary underline shrink-0 px-1 py-0.5"
+              >
+                Dismiss
+              </button>
             </div>
           )}
 
@@ -738,7 +747,7 @@ export default function InterviewSessionPage() {
 
           {!isCompleted ? (
             <ChatInput
-              onSendMessage={(txt) => handleSendMessage(txt, false)}
+              onSendMessage={(txt) => handleSendMessage(txt, modality === "VOICE")}
               disabled={isStreaming}
               isVoiceActive={modality === "VOICE"}
               isListening={voiceSession.voiceState === "LISTENING"}

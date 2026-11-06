@@ -43,9 +43,17 @@ export function ChatInput({
   }, [text]);
 
   // Auto-focus textarea when re-enabled after interviewer finishes streaming
+  // AND ensure input state is wiped clean when submission begins or round advances
   const prevDisabledRef = useRef(disabled);
   useEffect(() => {
-    if (prevDisabledRef.current && !disabled) {
+    if (disabled) {
+      setText("");
+      userTypedPrefixRef.current = "";
+      isPopulatedByVoiceRef.current = false;
+    } else if (prevDisabledRef.current && !disabled) {
+      setText("");
+      userTypedPrefixRef.current = "";
+      isPopulatedByVoiceRef.current = false;
       textareaRef.current?.focus();
     }
     prevDisabledRef.current = disabled;
@@ -57,6 +65,7 @@ export function ChatInput({
 
   // Synchronize live voice transcription into the textarea without duplicating
   useEffect(() => {
+    if (disabled) return;
     if (isListening && voiceTranscript !== undefined) {
       isPopulatedByVoiceRef.current = true;
       const prefix = userTypedPrefixRef.current.trim();
@@ -68,7 +77,7 @@ export function ChatInput({
         setText("");
       }
     }
-  }, [voiceTranscript, isListening]);
+  }, [voiceTranscript, isListening, disabled]);
 
   const handleWhisperEnhance = async () => {
     if (!onTranscribeWhisper || isTranscribingWhisper) return;
@@ -89,17 +98,20 @@ export function ChatInput({
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!text.trim() || disabled) return;
+    const content = text.trim();
+    if (!content || disabled) return;
+
+    // Immediately wipe local textarea input state before triggering turn send
+    setText("");
+    userTypedPrefixRef.current = "";
+    isPopulatedByVoiceRef.current = false;
 
     // If still recording when submitting, pause recording first
     if (isListening) {
       onToggleListening?.();
     }
 
-    onSendMessage(text.trim());
-    setText("");
-    userTypedPrefixRef.current = "";
-    isPopulatedByVoiceRef.current = false;
+    onSendMessage(content);
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";

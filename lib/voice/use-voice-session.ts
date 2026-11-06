@@ -92,9 +92,10 @@ export function useVoiceSession({
       onEnd: () => {
         sm.handleTTSEnd();
         stt.setInterviewerQuestionEnd(Date.now());
-        // Once AI speech completes, resume listening for candidate answer
+        // Once AI speech completes, resume listening for candidate answer with a clean buffer
         if (sm.getState() === "LISTENING") {
-          stt.startListening().catch(() => {});
+          setInterimTranscript("");
+          stt.startListening(true).catch(() => {});
         }
       },
       onInterrupted: () => {
@@ -137,7 +138,7 @@ export function useVoiceSession({
     sttRef.current?.setLanguage(newLang);
   }, []);
 
-  const startListening = useCallback(async (clearBuffer: boolean = false) => {
+  const startListening = useCallback(async (clearBuffer: boolean = true) => {
     if (!enabled || !sttRef.current) return false;
     setError(null);
     setInterimTranscript("");
@@ -202,7 +203,8 @@ export function useVoiceSession({
     }
     const sm = stateMachineRef.current;
     sm.transition("LISTENING", "Manual stop speaking; ready to listen");
-    sttRef.current?.startListening().catch(() => {});
+    setInterimTranscript("");
+    sttRef.current?.startListening(true).catch(() => {});
   }, []);
 
   const finishTurnSubmission = useCallback(() => {

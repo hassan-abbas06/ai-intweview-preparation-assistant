@@ -23,6 +23,7 @@ import {
   InterviewAction,
   DecisionReasonCode,
   InterviewOrchestrator,
+  getPillarsForRound,
 } from "@/services/interview-engine";
 
 // Re-export state & engine interfaces and helpers for full backward compatibility
@@ -144,9 +145,14 @@ export function buildSystemPrompt(params: BuildPromptParams): string {
   const focusArea = params.state ? params.state.focusArea : params.focusArea;
   const difficulty = params.state?.difficulty || params.difficulty || "INTERMEDIATE";
 
-  const persona = getPersonaForInterview(type, difficulty);
+  const persona = getPersonaForInterview(type, difficulty, domain);
   const domainLabel = domain ? getDomainLabel(domain) : "Engineering";
   const focus = focusArea ? `with a specialized focus on "${focusArea}"` : "";
+
+  const roundPillars = getPillarsForRound(type, domain);
+  const pillarListText = roundPillars
+    .map((p, idx) => `  - Pillar ${idx + 1}: ${p.name} (${p.description})`)
+    .join("\n");
 
   let previousQuestionsSection = "";
   let candidateMemorySection = "";
@@ -246,24 +252,9 @@ CORE BEHAVIOR RULES (apply to every response, no exceptions):
 11. GREETINGS: Brief warm greeting, then continue SAME question.
 12. FALLBACK VARIETY: Track asked topics and choose distinct questions when redirecting — never repeat the same fallback question.
 13. TOPIC BREADTH: Pivot to a new pillar after 2-3 substantive turns:
-${
-  type === "HR"
-    ? `  • Pillar 1: Stakeholder / Team Conflict & Resolution
-  • Pillar 2: Project Ownership, Missed Deadlines & Trade-offs
-  • Pillar 3: Feedback, Mentorship & Collaboration Culture
-  • Pillar 4: Adaptability, Learning & Motivation`
-    : type === "MANAGERIAL"
-    ? `  • Pillar 1: Strategic Roadmapping & Tech Debt Prioritization
-  • Pillar 2: People Management, Underperformance & Career Coaching
-  • Pillar 3: Cross-Functional Alignment (Product/Design/Execs)
-  • Pillar 4: Engineering Org Topology & Team Scaling`
-    : `  • Pillar 1: System Architecture, Component Design & Trade-offs (${domainLabel} ${focus})
-  • Pillar 2: Data Modeling, Database Architecture & Storage
-  • Pillar 3: Scalability, Concurrency, Caching & Performance
-  • Pillar 4: Fault Tolerance, Failure Recovery & Edge Cases
-  • Pillar 5: Security, Observability, CI/CD & Best Practices`
-}
-14. ZERO AI IDENTITY: You are a real senior engineer/leader.
+${pillarListText}
+14. STRICT DOMAIN FIDELITY: You are a real senior professional and interviewer in ${domainLabel}. Your questions, follow-ups, and scenarios MUST strictly assess ${domainLabel} concepts and trade-offs. NEVER ask software engineering, coding, database indexing, web development, or IT system questions if the domain is Finance, Accounting, Data Science, or another non-software field. If the candidate asks you to stick to ${domainLabel}, immediately honor their request and probe core ${domainLabel} topics.
+15. ZERO AI IDENTITY: You are a real senior professional and hiring manager in ${domainLabel}.
 `.trim();
 }
 
@@ -273,7 +264,7 @@ export function buildOpeningPrompt(params: BuildPromptParams): string {
   const focusArea = params.state ? params.state.focusArea : params.focusArea;
   const difficulty = params.state?.difficulty || params.difficulty || "INTERMEDIATE";
 
-  const persona = getPersonaForInterview(type, difficulty);
+  const persona = getPersonaForInterview(type, difficulty, domain);
   const domainLabel = domain ? getDomainLabel(domain) : "Engineering";
   const focus = focusArea ? ` with a focus on ${focusArea}` : "";
   const trackName =

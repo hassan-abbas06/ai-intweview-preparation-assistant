@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+﻿import { prisma } from "@/lib/prisma";
 import { InterviewType } from "@prisma/client";
 
 // ============================================================================
@@ -61,7 +61,7 @@ const STOPWORDS = new Set([
 // Known conversational openers & persona prefixes to strip during question normalization
 const CONVERSATIONAL_PREFIXES = [
   // Persona prefixes
-  /^(alex chen|sarah martinez|jordan williams|maya patel)\s*:\s*/i,
+  /^(alex chen|sarah martinez|jordan williams|maya patel|david sterling|rachel green|dr\.?\s*elena rostova|elena rostova|marcus vance|vikram malhotra)\s*:\s*/i,
   // Conversational acknowledgments
   /^(fair point( on that)?|right|got it|makes sense|okay|hm|nice approach|good thinking|thanks for sharing)[.,!?;:\s]+/i,
   /^(let'?s unpack that|let'?s look at that|let'?s talk about|let'?s dive into)[.,!?;:\s]+/i,
@@ -481,7 +481,7 @@ export function validateCandidateQuestion(
 // ============================================================================
 
 /**
- * Returns specific scenario variation angles for prompt injection.
+ * Returns specific scenario variation angles for prompt injection tailored to domain and pillar.
  */
 export function getScenarioDiversificationGuidelines(
   pillarIndex: number,
@@ -490,7 +490,204 @@ export function getScenarioDiversificationGuidelines(
   difficulty?: string
 ): string {
   const diff = (difficulty || "MID").toUpperCase();
+  const normDomain = (domain || "").toLowerCase().trim();
 
+  // 1. FINANCE DOMAIN GUIDELINES
+  if (normDomain.includes("finance")) {
+    const financeGuidelines: Record<number, string[]> = {
+      0: [
+        "Variation Angle 1 (WACC & Sensitivity): The Federal Reserve hikes benchmark rates by 100 bps. How does this impact debt vs equity cost in WACC and the resulting DCF valuation?",
+        "Variation Angle 2 (Multiple Divergence): A target firm trades at 18x EV/EBITDA while peers trade at 12x. Walk me through the operational, growth, or margin factors that could justify or invalidate this premium.",
+        "Variation Angle 3 (LBO Returns): In a leveraged buyout, how do senior debt covenants and mezzanine financing tranches affect the sponsor's target 20% IRR?",
+      ],
+      1: [
+        "Variation Angle 1 (Working Capital Crunch): Revenue is up 30% YoY, but operating cash flow is deeply negative. Diagnose the cash conversion cycle and receivables aging.",
+        "Variation Angle 2 (Capitalized vs Expensed R&D): Trace how capitalizing $20M of software development instead of expensing it affects EBITDA, net income, and operating cash flows across periods.",
+        "Variation Angle 3 (Inventory Valuation): Explain the cash flow and tax implications of shifting from FIFO to LIFO in an inflationary environment.",
+      ],
+      2: [
+        "Variation Angle 1 (Optimal Debt Ratio): A firm's debt-to-equity is 0.2. Why might management issue $500M in senior notes to repurchase shares despite rising borrowing costs?",
+        "Variation Angle 2 (Debt Covenant Breach): EBITDA drops 15%, causing the net debt to EBITDA ratio to touch a 4.0x covenant ceiling. What strategic financing actions should the CFO take?",
+        "Variation Angle 3 (Dividend vs Buyback): Evaluate the tax, signaling, and balance sheet implications of returning $100M of excess cash via share buybacks versus a special dividend.",
+      ],
+      3: [
+        "Variation Angle 1 (FX Hedging): A multinational has 40% of costs in USD and 60% of revenue in EUR. How would you structure a hedging program using forward contracts and options?",
+        "Variation Angle 2 (Value at Risk): Interpret a daily 99% VaR of $5M on a $200M portfolio, and discuss its limitations during tail-risk events.",
+        "Variation Angle 3 (Interest Rate Swaps): How does a borrower convert $100M of floating SOFR debt into fixed-rate obligations using an interest rate swap?",
+      ],
+      4: [
+        "Variation Angle 1 (Accretion/Dilution): Target has a P/E of 20, Acquirer has a P/E of 15. Is an all-stock deal accretive or dilutive to the acquirer's EPS before synergies?",
+        "Variation Angle 2 (Synergy Valuation): In an acquisition, how do you haircut cost synergies versus revenue synergies when modeling pro-forma enterprise value?",
+        "Variation Angle 3 (Due Diligence Red Flags): Uncovering off-balance sheet liabilities and customer concentration risks during financial due diligence.",
+      ],
+    };
+    const angles = financeGuidelines[pillarIndex] || financeGuidelines[0];
+    return `
+SCENARIO DIVERSIFICATION DIRECTIVE (STRICT FINANCE DOMAIN FOCUS):
+To guarantee deep financial assessment across candidate sessions, explore an alternative concrete financial scenario angle:
+â€¢ ${angles.join("\nâ€¢ ")}
+- Ensure the question tests ${pillarName || "the active financial pillar"} under ${diff} expectations with concrete numbers, valuation tradeoffs, or financial statements mechanics.
+- STRICT RULE: NEVER ask software architecture, coding, or database questions. Keep the focus entirely on finance.
+`.trim();
+  }
+
+  // 2. ACCOUNTING DOMAIN GUIDELINES
+  if (normDomain.includes("account")) {
+    const accountingGuidelines: Record<number, string[]> = {
+      0: [
+        "Variation Angle 1 (ASC 606 Revenue Recognition): How would you account for a 3-year enterprise software contract with bundled implementation, custom modifications, and support?",
+        "Variation Angle 2 (Lease Accounting ASC 842): Walk through the balance sheet impact of recording an operating lease as a Right-of-Use (ROU) asset and lease liability.",
+        "Variation Angle 3 (Fair Value Leveling): Classifying investments between Level 1, Level 2, and Level 3 fair value hierarchies during fiscal year-end reporting.",
+      ],
+      1: [
+        "Variation Angle 1 (Unreconciled Clearing Accounts): A high-volume payment clearing account has a $1.2M unexplained variance at month-end close. What audit and reconciliation steps do you take?",
+        "Variation Angle 2 (Complex Accruals): Accruing for unbilled vendor services and contingent liabilities under GAAP conservatism principles.",
+        "Variation Angle 3 (Intercompany Eliminations): Consolidating a foreign subsidiary with currency translation adjustments and intercompany loan eliminations.",
+      ],
+      2: [
+        "Variation Angle 1 (Bad Debt Allowance): Estimating credit loss reserves under the CECL (Current Expected Credit Losses) standard during macroeconomic downturns.",
+        "Variation Angle 2 (Inventory Lower of Cost or Market): Testing for inventory obsolescence and recording write-downs under FIFO vs. weighted average cost.",
+        "Variation Angle 3 (Capitalized Software vs Expense): Applying criteria to determine when internal-use software development costs must be capitalized vs. expensed.",
+      ],
+      3: [
+        "Variation Angle 1 (SOX 404 Deficiency): An internal audit reveals the same individual can create new vendors and approve invoice disbursements. Design a remediation control.",
+        "Variation Angle 2 (Substantive Testing): Designing analytical procedures and sample testing for audit verification of year-end deferred revenue balances.",
+        "Variation Angle 3 (Fraud Detection): Identifying red flags in manual journal entries posted near the close of a fiscal quarter.",
+      ],
+      4: [
+        "Variation Angle 1 (Deferred Tax Asset Valuation Allowance): Determining whether a full valuation allowance is required against deferred tax assets after consecutive operating losses.",
+        "Variation Angle 2 (Book vs Tax Timing Differences): Explaining temporary vs. permanent differences created by accelerated tax depreciation (MACRS) vs. book straight-line.",
+        "Variation Angle 3 (R&D Tax Amortization): Navigating Section 174 mandatory capitalization and 5-year amortization for domestic research expenditures.",
+      ],
+    };
+    const angles = accountingGuidelines[pillarIndex] || accountingGuidelines[0];
+    return `
+SCENARIO DIVERSIFICATION DIRECTIVE (STRICT ACCOUNTING DOMAIN FOCUS):
+To guarantee rigorous accounting assessment, explore an alternative concrete accounting scenario:
+â€¢ ${angles.join("\nâ€¢ ")}
+- Ensure the question tests ${pillarName || "the active accounting pillar"} under ${diff} expectations with concrete GAAP/IFRS standards, journal entries, or balance sheet treatments.
+- STRICT RULE: NEVER ask software architecture, coding, or IT questions. Keep the focus entirely on accounting.
+`.trim();
+  }
+
+  // 3. DATA SCIENCE DOMAIN GUIDELINES
+  if (normDomain.includes("data_science") || normDomain.includes("data science")) {
+    const dsGuidelines: Record<number, string[]> = {
+      0: [
+        "Variation Angle 1 (Hypothesis Testing & Power): Designing an A/B test with small sample sizes where statistical power and type I/II error tradeoffs are critical.",
+        "Variation Angle 2 (Extreme Class Imbalance): Formulating sampling and loss weight strategies when positive fraud signals occur in fewer than 0.05% of rows.",
+        "Variation Angle 3 (Distributional Shifts): Identifying non-Gaussian tails and applying appropriate parametric vs non-parametric hypothesis tests.",
+      ],
+      1: [
+        "Variation Angle 1 (Target Leakage): Preventing subtle data leakage when generating windowed aggregations and target encodings across cross-validation folds.",
+        "Variation Angle 2 (High-Cardinality Categoricals): Comparing frequency encoding, weight of evidence (WoE), and entity embeddings for 100k+ categorical levels.",
+        "Variation Angle 3 (Dimensionality Reduction): Choosing between PCA, UMAP, and autoencoders for dense representation learning.",
+      ],
+      2: [
+        "Variation Angle 1 (Model Selection Tradeoff): Defending a constrained regularized GLM versus an ensemble gradient-boosted tree in a latency-critical pipeline.",
+        "Variation Angle 2 (Tree Depth vs Learning Rate): Tuning XGBoost / LightGBM hyperparameters to prevent leaf overfitting on noisy tabular data.",
+        "Variation Angle 3 (Neural Network Architecture): Formulating regularization and dropout schedules when fine-tuning deep models on small datasets.",
+      ],
+      3: [
+        "Variation Angle 1 (Metric Selection): Demonstrating why ROC-AUC is dangerously misleading on skewed datasets and choosing Precision-Recall AUC (PR-AUC).",
+        "Variation Angle 2 (Cross-Validation Strategy): Designing GroupKFold and Purged Time-Series splits to prevent temporal leakage in financial forecasting.",
+        "Variation Angle 3 (Bias-Variance Diagnostics): Diagnosing learning curves to distinguish underfitting from high estimation variance.",
+      ],
+      4: [
+        "Variation Angle 1 (Concept Drift): Distinguishing covariate shift from concept drift in production and formulating automated retraining policies.",
+        "Variation Angle 2 (Explainability with SHAP): Explaining tree SHAP versus kernel SHAP calculations for high-stakes credit approval models.",
+        "Variation Angle 3 (Real-Time Inference Serving): Managing model feature store freshness and p99 inference latency constraints.",
+      ],
+    };
+    const angles = dsGuidelines[pillarIndex] || dsGuidelines[0];
+    return `
+SCENARIO DIVERSIFICATION DIRECTIVE (STRICT DATA SCIENCE DOMAIN FOCUS):
+To guarantee deep data science assessment, explore an alternative concrete machine learning scenario:
+- ${angles.join("\n- ")}
+- Ensure the question tests ${pillarName || "the active data science pillar"} under ${diff} expectations with statistical rigor, evaluation metrics, or modeling trade-offs.
+- STRICT RULE: NEVER ask software architecture, web development, or IT questions. Keep the focus entirely on data science and machine learning.
+`.trim();
+  }
+
+  // 4. DATA ANALYTICS DOMAIN GUIDELINES
+  if (normDomain.includes("data_analytic") || normDomain.includes("analytics")) {
+    const daGuidelines: Record<number, string[]> = {
+      0: [
+        "Variation Angle 1 (Analytical Window Functions): Complex ranking, rolling averages, and lead/lag partitioning for customer transaction trends in SQL.",
+        "Variation Angle 2 (Query Optimization): Eliminating Cartesian joins and optimizing complex Common Table Expressions (CTEs) across billion-row warehouses.",
+        "Variation Angle 3 (Recursive Queries): Writing recursive SQL CTEs to navigate hierarchical organizational or product category trees.",
+      ],
+      1: [
+        "Variation Angle 1 (Cohort Retention Analysis): Structuring SQL queries to build user retention matrices and analyzing cohort decay curves.",
+        "Variation Angle 2 (Marketing Funnel Attribution): Evaluating first-touch, last-touch, and multi-touch attribution models for customer acquisition spend.",
+        "Variation Angle 3 (Executive KPI Diagnostics): Diagnosing a sudden 15% drop in Net Promoter Score alongside increased conversion rates.",
+      ],
+      2: [
+        "Variation Angle 1 (Dimensional Modeling): Designing star vs snowflake schema fact and dimension tables for an enterprise e-commerce platform.",
+        "Variation Angle 2 (Slowly Changing Dimensions): Implementing SCD Type 2 tracking to preserve historical audit accuracy on customer attributes.",
+        "Variation Angle 3 (Warehouse Partitioning): Optimizing clustering and partition keys in Snowflake/BigQuery for analytical reporting speed.",
+      ],
+      3: [
+        "Variation Angle 1 (Executive Dashboard Strategy): Designing 5-second cognitive clarity dashboards for executive leadership without visual clutter.",
+        "Variation Angle 2 (Data Discrepancy Reconciliation): Investigating when reporting dashboards diverge from production transactional records.",
+        "Variation Angle 3 (Data Storytelling): Translating complex analytical variance findings into non-technical operational recommendations.",
+      ],
+      4: [
+        "Variation Angle 1 (A/B Test Metric Disagreement): Interpreting when an experimentation variant lifts conversion but decreases average order value.",
+        "Variation Angle 2 (Sample Size & MDE): Calculating sample size requirements and guarding against peeking problems in experimentation.",
+        "Variation Angle 3 (Novelty Effects): Detecting and isolating user novelty effects in long-running feature rollouts.",
+      ],
+    };
+    const angles = daGuidelines[pillarIndex] || daGuidelines[0];
+    return `
+SCENARIO DIVERSIFICATION DIRECTIVE (STRICT DATA ANALYTICS DOMAIN FOCUS):
+To guarantee deep data analytics assessment, explore an alternative concrete analytics scenario:
+- ${angles.join("\n- ")}
+- Ensure the question tests ${pillarName || "the active data analytics pillar"} under ${diff} expectations with SQL patterns, business metrics, or dimensional warehousing concepts.
+- STRICT RULE: NEVER ask software engineering, backend microservices, or IT systems questions. Keep the focus entirely on data analytics.
+`.trim();
+  }
+
+  // 5. CYBERSECURITY DOMAIN GUIDELINES
+  if (normDomain.includes("cyber") || normDomain.includes("security")) {
+    const cyberGuidelines: Record<number, string[]> = {
+      0: [
+        "Variation Angle 1 (STRIDE Threat Modeling): Deconstructing an external checkout API into data flows, trust boundaries, and threat categorizations.",
+        "Variation Angle 2 (Vulnerability Prioritization): Triaging 5,000 open vulnerabilities using CVSS scores, exploitability metrics, and business asset value.",
+        "Variation Angle 3 (Attack Surface Mapping): Uncovering exposed shadow IT and vulnerable third-party library dependencies in the perimeter.",
+      ],
+      1: [
+        "Variation Angle 1 (Zero Trust Implementation): Transitioning from perimeter defense to identity-based micro-segmentation and least-privilege egress filtering.",
+        "Variation Angle 2 (Layer 7 DDoS Defense): Mitigating sophisticated application-layer HTTP flood attacks without blocking legitimate traffic.",
+        "Variation Angle 3 (Network Microsegmentation): Isolating PCI-DSS cardholder data environments from corporate workstations.",
+      ],
+      2: [
+        "Variation Angle 1 (Least Privilege IAM Policies): Designing granular AWS/GCP IAM roles with condition blocks to eliminate wildcard permissions.",
+        "Variation Angle 2 (SAML vs OAuth2/OIDC): Securing single sign-on flows against token replay and session fixation attacks.",
+        "Variation Angle 3 (Credential Dumping Defense): Hardening domain controllers and cloud IAM against Mimikatz, Pass-the-Hash, and Kerberoasting.",
+      ],
+      3: [
+        "Variation Angle 1 (Ransomware Containment): Executing containment and forensic preservation within the first 60 minutes of ransomware detection.",
+        "Variation Angle 2 (SIEM Correlation Rules): Writing high-fidelity detection logic for slow-and-low credential spraying across disparate authentication logs.",
+        "Variation Angle 3 (Threat Hunting): Proactively searching for adversary living-off-the-land techniques (e.g. PowerShell/WMI abuse).",
+      ],
+      4: [
+        "Variation Angle 1 (OWASP Top 10 Prevention): Eliminating Server-Side Request Forgery (SSRF) and SQL injection vulnerabilities through defense-in-depth.",
+        "Variation Angle 2 (Cryptographic Hygiene): Implementing TLS 1.3 forward secrecy, secure key rotation, and AES-GCM envelope encryption.",
+        "Variation Angle 3 (SOC 2 & Compliance Auditing): Establishing continuous compliance evidence collection for SOC 2 Type II and ISO 27001.",
+      ],
+    };
+    const angles = cyberGuidelines[pillarIndex] || cyberGuidelines[0];
+    return `
+SCENARIO DIVERSIFICATION DIRECTIVE (STRICT CYBERSECURITY DOMAIN FOCUS):
+To guarantee deep cybersecurity assessment, explore an alternative concrete security scenario:
+- ${angles.join("\n- ")}
+- Ensure the question tests ${pillarName || "the active cybersecurity pillar"} under ${diff} expectations with threat modeling, defense in depth, or incident response tactics.
+- STRICT RULE: NEVER ask generic software development or frontend questions. Keep the focus entirely on cybersecurity.
+`.trim();
+  }
+
+  // 3. TECHNICAL / SOFTWARE ENGINEERING GUIDELINES (DEFAULT)
   const guidelinesByPillar: Record<number, string[]> = {
     0: [
       "Variation Angle 1 (Production Incident): A legacy service is dropping requests under 10x traffic surge. Diagnose the boundary bottleneck.",
@@ -524,7 +721,7 @@ export function getScenarioDiversificationGuidelines(
   return `
 SCENARIO DIVERSIFICATION DIRECTIVE (DO NOT REUSE STANDARD TEXTBOOK QUESTIONS):
 To guarantee question diversity across candidate sessions, explore an alternative concrete scenario angle:
-• ${pillarAngles.join("\n• ")}
+â€¢ ${pillarAngles.join("\nâ€¢ ")}
 - Ensure the question tests ${pillarName || "the active pillar"} under ${diff} expectations with concrete constraints.
 `.trim();
 }
@@ -539,6 +736,174 @@ export function getDiverseFallbackQuestion(
   domain?: string | null,
   archetype?: ScenarioArchetype
 ): string {
+  const normDomain = (domain || "").toLowerCase().trim();
+
+  // 1. FINANCE FALLBACK QUESTIONS
+  if (normDomain.includes("finance")) {
+    const financeFallbacks: Record<number, string[]> = {
+      0: [
+        "Walk me through how a 100-basis-point increase in the risk-free rate ripples through the Capital Asset Pricing Model (CAPM) to affect a company's WACC and intrinsic DCF equity value.",
+        "Suppose you are evaluating two companies in the same industry: Company A trades at 15x EV/EBITDA and Company B trades at 9x. What key financial drivers would justify Company A's multiple premium?",
+        "In an LBO model, if a financial sponsor wants to achieve a 20% IRR over a 5-year investment horizon, what are the three primary levers they can pull to hit that return threshold?",
+      ],
+      1: [
+        "If a company's revenue grew 25% year-over-year, but operating cash flow turned significantly negative, where on the balance sheet and cash flow statement would you look first to diagnose the liquidity gap?",
+        "Walk me through how an increase of $10 million in accounts receivable impacts the three financial statements: Income Statement, Balance Sheet, and Statement of Cash Flows.",
+        "How do you treat operating leases under ASC 842 / IFRS 16 on the balance sheet, and what is the resulting effect on reported EBITDA and leverage ratios?",
+      ],
+      2: [
+        "When a company is deciding whether to fund a major capital expenditure through senior term debt, convertible bonds, or an equity offering, what financial metrics and market conditions guide that decision?",
+        "Suppose a corporation's net debt to EBITDA covenant is set at 3.5x, and a macroeconomic downturn pushes leverage to 3.8x. What liquidity and restructuring remedies should the treasury team evaluate?",
+        "How would you determine a company's optimal capital structure using the trade-off theory between the tax shield of debt and the cost of financial distress?",
+      ],
+      3: [
+        "Suppose a corporate treasury has significant euro-denominated receivables due in 90 days. How would you compare using forward currency contracts versus purchasing put options to hedge the downside FX risk?",
+        "What are the primary strengths and blind spots of using parametric Value at Risk (VaR) versus historical simulation when stress-testing a portfolio under tail-risk market shocks?",
+        "Explain how an interest rate swap works from the perspective of a company looking to lock in fixed borrowing costs on a floating-rate bank facility.",
+      ],
+      4: [
+        "If an acquirer with a P/E ratio of 16x acquires a target with a P/E ratio of 22x in an all-stock transaction, is the deal initially accretive or dilutive to EPS, and why?",
+        "When modeling an M&A transaction, why are financial analysts typically more confident in factoring cost synergies into valuation compared to revenue synergies?",
+        "Walk me through how you would evaluate working capital adjustments and net debt definitions when negotiating the purchase price in a definitive acquisition agreement.",
+      ],
+    };
+    const pool = financeFallbacks[pillarIndex] || financeFallbacks[0];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // 2. ACCOUNTING FALLBACK QUESTIONS
+  if (normDomain.includes("account")) {
+    const accountingFallbacks: Record<number, string[]> = {
+      0: [
+        "Walk me through the five-step revenue recognition model under ASC 606, and how you apply it when software licenses and post-contract customer support are sold together.",
+        "How does the accounting treatment differ between GAAP and IFRS regarding the reversal of inventory write-downs and the capitalization of development costs?",
+        "Explain the balance sheet and income statement mechanics of recognizing a finance lease versus an operating lease under ASC 842.",
+      ],
+      1: [
+        "Suppose your monthly bank reconciliation shows a $250,000 difference between the general ledger cash balance and the bank statement. What step-by-step investigation process do you follow?",
+        "Walk me through the required adjusting journal entries at year-end for an unearned subscription revenue balance of $120,000 where 4 months of service have been delivered.",
+        "How do you record the journal entries for a foreign currency transaction between the transaction date, the balance sheet date, and the final settlement date?",
+      ],
+      2: [
+        "How do you determine the appropriate allowance for doubtful accounts using an aging schedule, and how does writing off a specific uncollectible account impact net income and the balance sheet?",
+        "Explain how changing from the FIFO inventory valuation method to LIFO during a period of rising prices affects cost of goods sold, ending inventory, and income taxes.",
+        "When a company settles a warranty claim, how does that impact the previously established warranty liability account and current period net income?",
+      ],
+      3: [
+        "If you discover that the accounts payable clerk has permissions to both add new vendor records and approve invoice payments, what compensating internal controls would you immediately implement?",
+        "What substantive audit procedures would you execute to verify that year-end accounts payable are not materially understated due to unrecorded liabilities?",
+        "Walk me through how an auditor tests the design and operating effectiveness of automated application controls under SOX Section 404.",
+      ],
+      4: [
+        "Explain the difference between permanent and temporary book-tax differences, and give two real-world examples of each.",
+        "Under what conditions must a corporation establish a valuation allowance against its deferred tax assets under ASC 740?",
+        "How does the mandatory 5-year amortization of Section 174 research and development expenditures affect a company's taxable income versus GAAP financial accounting?",
+      ],
+    };
+    const pool = accountingFallbacks[pillarIndex] || accountingFallbacks[0];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // 3. DATA SCIENCE FALLBACK QUESTIONS
+  if (normDomain.includes("data_science") || normDomain.includes("data science")) {
+    const dsFallbacks: Record<number, string[]> = {
+      0: [
+        "When testing two variant models, why might a high p-value lead to a false sense of security if statistical power was insufficient?",
+        "Explain how you address extreme class imbalance (1 positive in 10,000 cases) when training a predictive fraud detection model.",
+        "How do you determine whether continuous data should be transformed using Box-Cox or Yeo-Johnson before fitting a parametric regression model?",
+      ],
+      1: [
+        "Walk me through how Target Encoding can introduce subtle data leakage during cross-validation, and what out-of-fold strategies you use to prevent it.",
+        "When would you choose PCA over t-SNE or UMAP for dimensionality reduction, and why can t-SNE not be directly applied to transform new test data?",
+        "How do you handle missing values in a dataset when the missingness mechanism is Missing Not At Random (MNAR)?",
+      ],
+      2: [
+        "How does Gradient Boosting differ from Random Forest in how trees are added to minimize loss, and what specific hyperparameters do you tune first to avoid overfitting in XGBoost?",
+        "Under what conditions would you choose an L1-regularized Logistic Regression model over a deep neural network for a production classification task?",
+        "Explain how the kernel trick works in Support Vector Machines (SVM), and when you would select a Radial Basis Function (RBF) kernel over a linear kernel.",
+      ],
+      3: [
+        "Explain why ROC-AUC can be deceptively optimistic on heavily skewed datasets, and why Precision-Recall AUC (PR-AUC) is a better evaluation metric for anomaly detection.",
+        "Walk me through the bias-variance tradeoff: what specific diagnostic indicators tell you a model has high variance versus high bias, and what steps fix each?",
+        "How do you structure Purged Group Time-Series cross-validation to prevent lookahead bias when modeling chronological financial data?",
+      ],
+      4: [
+        "Suppose your deployed machine learning model's performance drops by 20% three months after launch. How do you distinguish between covariate shift, prior shift, and concept drift?",
+        "Explain how TreeSHAP calculates feature attributions for a complex gradient-boosted tree, and how it satisfies the efficiency and additivity properties.",
+        "What architectural strategies do you implement to guarantee sub-50ms p99 inference latency for a complex model serving real-time requests?",
+      ],
+    };
+    const pool = dsFallbacks[pillarIndex] || dsFallbacks[0];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // 4. DATA ANALYTICS FALLBACK QUESTIONS
+  if (normDomain.includes("data_analytic") || normDomain.includes("analytics")) {
+    const daFallbacks: Record<number, string[]> = {
+      0: [
+        "Walk me through the difference between ROW_NUMBER(), RANK(), and DENSE_RANK() in SQL, and write a query pattern to find the top 3 highest-spending customers per market region.",
+        "How do window functions like LAG() and LEAD() work over partitioned frames, and how would you use them to calculate week-over-week user retention?",
+        "How do you optimize a query joining a 2-billion-row transactional event table with a 50-million-row user dimension table in a cloud data warehouse like Snowflake or BigQuery?",
+      ],
+      1: [
+        "How would you construct a monthly cohort retention table in SQL to analyze 12-month user retention across organic versus paid acquisition channels?",
+        "If Customer Acquisition Cost (CAC) dropped by 30% but total monthly revenue also fell by 15%, how would you diagnose what happened to sales efficiency?",
+        "Walk me through the metrics and funnel stages you would define to diagnose user drop-off in a multi-step e-commerce checkout flow.",
+      ],
+      2: [
+        "Explain the architectural difference between a Kimball star schema and a snowflake schema, and under what conditions you would denormalize dimension tables.",
+        "What are Slowly Changing Dimensions (SCD Type 1 vs Type 2 vs Type 3), and how would you implement an SCD Type 2 table to maintain complete historical audit accuracy?",
+        "When designing a data warehouse in BigQuery or Snowflake, how do you decide on clustering keys and partition strategies to minimize query costs?",
+      ],
+      3: [
+        "When designing an executive dashboard for the C-suite, what visual hierarchy principles ensure they can spot operational risks within 5 seconds?",
+        "Suppose an executive complains that the BI dashboard numbers diverge from the operational database. Walk me through your step-by-step audit process.",
+        "How do you communicate a complex statistical finding to non-technical business stakeholders to drive an immediate operational pivot?",
+      ],
+      4: [
+        "In an A/B test where a new checkout experience shows a 6% increase in conversion rate but a 4% decline in average order value (AOV), how do you evaluate overall business impact?",
+        "How do you calculate the minimum detectable effect (MDE) and required sample size before starting an experiment, and why is early stopping risky?",
+        "How do you detect and isolate novelty effects versus genuine sustained behavioral change in long-term experimentation cohorts?",
+      ],
+    };
+    const pool = daFallbacks[pillarIndex] || daFallbacks[0];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // 5. CYBERSECURITY FALLBACK QUESTIONS
+  if (normDomain.includes("cyber") || normDomain.includes("security")) {
+    const cyberFallbacks: Record<number, string[]> = {
+      0: [
+        "Walk me through applying the STRIDE threat modeling framework to an enterprise customer portal accepting payment transactions.",
+        "How do you evaluate CVSS v3.1 base, temporal, and environmental scores to prioritize patch remediation when facing 5,000 open vulnerabilities across a hybrid infrastructure?",
+        "What methodology do you use to uncover exposed assets, vulnerable open ports, and leaked credentials across an organization's public attack surface?",
+      ],
+      1: [
+        "Explain how a Zero Trust architecture replaces legacy network perimeter security, and how micro-segmentation limits the blast radius of a compromised host.",
+        "How do you design network defenses to protect internal infrastructure against Layer 7 application-level HTTP flood DDoS attacks?",
+        "What are the network security differences between inspecting traffic with a stateful firewall versus a Web Application Firewall (WAF) and an IDS/IPS?",
+      ],
+      2: [
+        "Suppose an attacker compromises a developer's access credentials. How do least-privilege IAM policies, condition blocks, and session binding prevent lateral movement?",
+        "Explain the authentication handshake differences between SAML 2.0 and OAuth2 / OpenID Connect, and walk through how token replay attacks are mitigated.",
+        "How do you defend an Active Directory or cloud identity environment against Pass-the-Hash, Golden Ticket, and Kerberoasting attacks?",
+      ],
+      3: [
+        "Walk me through the containment, eradication, and forensic root-cause analysis steps when an EDR agent flags active credential dumping (e.g. Mimikatz) on a production server.",
+        "How do you structure SIEM correlation rules to detect slow-and-low distributed password spraying across multiple single sign-on endpoints?",
+        "What indicators of compromise (IOCs) and memory artifacts do you look for when hunting for living-off-the-land adversary techniques using native system binaries?",
+      ],
+      4: [
+        "Explain the mechanics of a SQL injection vulnerability versus a Server-Side Request Forgery (SSRF) vulnerability, and what defense-in-depth measures guarantee prevention.",
+        "What are the core technical requirements for securing sensitive financial data at rest and in transit under SOC 2 Type II and PCI-DSS compliance frameworks?",
+        "How do you enforce automated security linting, dependency vulnerability scanning (SCA), and container image verification within a modern CI/CD pipeline?",
+      ],
+    };
+    const pool = cyberFallbacks[pillarIndex] || cyberFallbacks[0];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // 3. TECHNICAL / SOFTWARE ENGINEERING FALLBACK QUESTIONS (DEFAULT)
   const fallbacksByPillar: Record<number, string[]> = {
     0: [
       "Let's look at a system reliability scenario: Suppose a distributed telemetry agent begins losing events during intermittent network partitions. How would you design its local buffering and backpressure mechanisms?",
@@ -571,6 +936,7 @@ export function getDiverseFallbackQuestion(
   const idx = Math.floor(Math.random() * pool.length);
   return pool[idx];
 }
+
 
 // ============================================================================
 // PERSISTENT QUESTION HISTORY SERVICE

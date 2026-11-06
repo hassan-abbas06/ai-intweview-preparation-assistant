@@ -8,12 +8,12 @@ import {
 } from "./types";
 
 const GROQ_MODELS = [
-  "qwen/qwen3.8-27b",
-  "openai/gpt-oss-120b",
-  "openai/gpt-oss-20b",
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+  "mixtral-8x7b-32768",
 ];
 
-const MODEL_TIMEOUT_MS = 15000; // 15s timeout per model attempt
+const MODEL_TIMEOUT_MS = 8000; // 8s timeout per model attempt for fast failover to instant models
 
 export class GroqProvider implements LLMProvider {
   name = "groq";
