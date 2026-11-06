@@ -71,9 +71,9 @@ const TRACKS: TrackCardOption[] = [
 ];
 
 const DIFFICULTY_LEVELS = [
-  { value: "JUNIOR", label: "Junior (0–2 yrs)" },
-  { value: "INTERMEDIATE", label: "Mid-Level (2–5 yrs)" },
-  { value: "SENIOR", label: "Senior (5–8 yrs)" },
+  { value: "JUNIOR", label: "Junior (0â€“2 yrs)" },
+  { value: "INTERMEDIATE", label: "Mid-Level (2â€“5 yrs)" },
+  { value: "SENIOR", label: "Senior (5â€“8 yrs)" },
   { value: "LEAD", label: "Staff / Lead (8+ yrs)" },
 ];
 
@@ -171,7 +171,7 @@ export default function InterviewHubPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-text-primary p-4 sm:p-8 transition-colors">
+    <div className="min-h-screen bg-[#F6F9FD] dark:bg-[#0B1320] text-text-primary p-4 sm:p-8 transition-colors">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Navigation Bar */}
         <div className="flex items-center justify-between pb-4 border-b border-border">

@@ -15,6 +15,7 @@ import {
   validateCandidateQuestion,
   getDiverseFallbackQuestion,
 } from "@/lib/interview/question-diversity";
+import { getPersonaForInterview } from "@/lib/interview/personas";
 import { EvaluationWorker } from "@/services/evaluation-worker";
 import { ResponseAnalyzerService } from "@/services/response-analyzer";
 

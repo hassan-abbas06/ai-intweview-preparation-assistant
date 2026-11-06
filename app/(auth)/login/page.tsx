@@ -282,13 +282,19 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 pt-14 sm:pt-4 bg-background transition-colors">
-      <div className="absolute top-4 right-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 pt-14 sm:pt-4 bg-[#F6F9FD] dark:bg-[#0B1320] transition-colors relative overflow-hidden">
+      {/* Soft Ambient Glows */}
+      <div className="absolute -top-32 -left-20 w-96 h-96 bg-blue-200/30 dark:bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-40 -right-20 w-96 h-96 bg-sky-200/30 dark:bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
       </div>
-      <Suspense fallback={<div className="text-sm text-text-secondary">Loading...</div>}>
-        <LoginForm />
-      </Suspense>
+      <div className="relative z-10 w-full max-w-md">
+        <Suspense fallback={<div className="text-sm text-slate-500">Loading...</div>}>
+          <LoginForm />
+        </Suspense>
+      </div>
     </div>
   );
 }

@@ -76,12 +76,16 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 pt-14 sm:pt-4 bg-background transition-colors">
-      <div className="absolute top-4 right-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 pt-14 sm:pt-4 bg-[#F6F9FD] dark:bg-[#0B1320] transition-colors relative overflow-hidden">
+      {/* Soft Ambient Glows */}
+      <div className="absolute -top-32 -left-20 w-96 h-96 bg-blue-200/30 dark:bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-40 -right-20 w-96 h-96 bg-purple-200/30 dark:bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
       </div>
 
-      <div className="w-full max-w-md">
+      <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-6">
           <h1 className="font-heading font-bold text-2xl text-text-primary tracking-tight">
             AI Interview Prep

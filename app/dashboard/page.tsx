@@ -172,7 +172,7 @@ export default function UserDashboardPage() {
   }
 
   const formatDate = (isoString: string | null) => {
-    if (!isoString) return "—";
+    if (!isoString) return "â€”";
     const date = new Date(isoString);
     return date.toLocaleDateString("en-US", {
       month: "short",
@@ -184,15 +184,20 @@ export default function UserDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 transition-colors">
+    <div className="min-h-screen bg-[#F6F9FD] dark:bg-[#0B1320] p-4 sm:p-6 transition-colors">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Top bar */}
         <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-6 border-b border-border gap-4">
-          <div>
-            <h1 className="text-2xl font-bold font-heading text-text-primary">Candidate Dashboard</h1>
-            <p className="text-sm text-text-secondary mt-1">
-              Welcome back, <span className="font-medium text-text-primary">{user?.email || "Candidate"}</span>
-            </p>
+          <div className="flex items-center gap-3">
+            <Link href="/" className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-heading font-extrabold text-sm shadow-sm shadow-blue-500/25 shrink-0" title="Home">
+              AI
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold font-heading text-text-primary">Candidate Dashboard</h1>
+              <p className="text-sm text-text-secondary mt-0.5">
+                Welcome back, <span className="font-medium text-text-primary">{user?.email || "Candidate"}</span>
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
@@ -528,13 +533,13 @@ export default function UserDashboardPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-text-secondary">Type & Domain:</span>
                   <span className="font-semibold text-text-primary">
-                    {sessionToDelete.type} • {sessionToDelete.domain || sessionToDelete.focusArea || "General Round"}
+                    {sessionToDelete.type} â€¢ {sessionToDelete.domain || sessionToDelete.focusArea || "General Round"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-text-secondary">Difficulty & Status:</span>
                   <span className="font-mono text-text-primary">
-                    {sessionToDelete.difficulty} • {sessionToDelete.status}
+                    {sessionToDelete.difficulty} â€¢ {sessionToDelete.status}
                   </span>
                 </div>
                 {sessionToDelete.report?.overallScore !== null && sessionToDelete.report?.overallScore !== undefined && (
