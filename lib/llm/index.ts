@@ -112,6 +112,9 @@ export function getLLMProvider(): LLMProvider {
     console.log("[LLM Provider] Initialized GeminiProvider as standalone engine.");
     provider = gemini;
   } else {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("No LLM provider configured");
+    }
     console.warn("[LLM Provider] No API keys detected. Initializing MockLLMProvider for local development.");
     provider = new MockLLMProvider();
   }

@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { EvaluationWorker } from "@/services/evaluation-worker";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Max execution duration in seconds (Edge / Node serverless)
+
+function constantTimeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 /**
  * Production worker dispatch handler for recurring cron execution and manual drain triggers.
@@ -19,19 +29,27 @@ export async function POST(req: NextRequest) {
 async function handleJobProcessing(req: NextRequest) {
   const startTime = Date.now();
 
-  // 1. Authorization check if CRON_SECRET is configured
+  // 1. Fail-closed authorization check: CRON_SECRET must be configured
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const authHeader = req.headers.get("authorization");
-    const cronHeader = req.headers.get("x-cron-secret");
-    const bearerMatch = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
+  if (!cronSecret || cronSecret.trim() === "") {
+    return NextResponse.json(
+      { error: "CRON_SECRET not configured" },
+      { status: 500 }
+    );
+  }
 
-    if (bearerMatch !== cronSecret && cronHeader !== cronSecret) {
-      return NextResponse.json(
-        { error: "Unauthorized: Invalid CRON_SECRET" },
-        { status: 401 }
-      );
-    }
+  const authHeader = req.headers.get("authorization");
+  const cronHeader = req.headers.get("x-cron-secret");
+  const bearerMatch = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
+
+  const isBearerValid = bearerMatch ? constantTimeCompare(bearerMatch, cronSecret) : false;
+  const isHeaderValid = cronHeader ? constantTimeCompare(cronHeader, cronSecret) : false;
+
+  if (!isBearerValid && !isHeaderValid) {
+    return NextResponse.json(
+      { error: "Unauthorized: Invalid CRON_SECRET" },
+      { status: 401 }
+    );
   }
 
   // 2. Parse batch and duration parameters

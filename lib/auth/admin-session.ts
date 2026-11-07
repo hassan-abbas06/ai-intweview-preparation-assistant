@@ -16,7 +16,10 @@ export interface AdminChallengePayload {
 }
 
 function getJwtSecret(): Uint8Array {
-  const secret = process.env.NEXTAUTH_SECRET || "default-dev-secret-change-in-production-min32chars";
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret || secret.trim() === "" || secret.length < 32) {
+    throw new Error("NEXTAUTH_SECRET must be set (min 32 chars)");
+  }
   return new TextEncoder().encode(secret);
 }
 
