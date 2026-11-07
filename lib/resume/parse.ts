@@ -38,6 +38,13 @@ export interface ParsedResume {
 export class UnreadableResumeError extends Error {}
 /** Corrupted or unsupported file. */
 export class ResumeParseError extends Error {}
+/** Document does not have enough resume signals. */
+export class NotAResumeError extends Error {
+  constructor(message = "This doesn't look like a resume.") {
+    super(message);
+    this.name = "NotAResumeError";
+  }
+}
 
 const MIN_WORDS = 40;
 const MAX_TEXT_CHARS = 60000;
@@ -120,6 +127,58 @@ export function splitSections(text: string): ResumeSections {
     sections[keys[i]] = body || null;
   }
   return sections;
+}
+
+export const SECONDARY_HEADINGS: readonly string[] = [
+  "certifications",
+  "certificates",
+  "achievements",
+  "awards",
+  "languages",
+  "interests",
+  "hobbies",
+  "references",
+  "volunteer experience",
+  "publications",
+  "courses",
+  "training",
+  "extracurricular activities",
+  "leadership",
+];
+
+const SECONDARY_HEADINGS_SET = new Set(SECONDARY_HEADINGS);
+
+const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+const PHONE_REGEX = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}|\+?\d{10,13}/;
+
+export function looksLikeResume(text: string, sections: ResumeSections): boolean {
+  if (!text || !sections) return false;
+
+  let coreCount = 0;
+  if (sections.summary !== null && sections.summary !== undefined) coreCount++;
+  if (sections.experience !== null && sections.experience !== undefined) coreCount++;
+  if (sections.education !== null && sections.education !== undefined) coreCount++;
+  if (sections.skills !== null && sections.skills !== undefined) coreCount++;
+  if (sections.projects !== null && sections.projects !== undefined) coreCount++;
+
+  let secondaryCount = 0;
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i].trim();
+    if (!rawLine || rawLine.length > 30) continue;
+    const cleaned = rawLine.replace(/\s*:+\s*$/, "").trim().toLowerCase();
+    if (SECONDARY_HEADINGS_SET.has(cleaned)) {
+      secondaryCount++;
+    }
+  }
+
+  const hasEmail = EMAIL_REGEX.test(text);
+  const hasPhone = PHONE_REGEX.test(text);
+
+  if (coreCount >= 2) return true;
+  if (coreCount >= 1 && (secondaryCount >= 1 || (hasEmail && hasPhone))) return true;
+
+  return false;
 }
 
 function countWords(text: string): number {
@@ -251,6 +310,9 @@ export async function parseResume(buf: Buffer): Promise<ParsedResume> {
   }
 
   const sections = splitSections(text);
+  if (!looksLikeResume(text, sections)) {
+    throw new NotAResumeError("This doesn't look like a resume.");
+  }
   const found = Object.values(sections).filter(Boolean).length;
   if (found <= 1) {
     warnings.push("Very few standard section headings were detected.");

@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
 import { successResponse, errorResponse, rateLimitResponse } from "@/lib/api-response";
-import { parseResume, UnreadableResumeError, ResumeParseError } from "@/lib/resume/parse";
+import { parseResume, UnreadableResumeError, ResumeParseError, NotAResumeError } from "@/lib/resume/parse";
 import { OcrUnavailableError } from "@/lib/resume/ocr";
 import { uploadResumeBuffer, deleteResume } from "@/lib/storage/cloudinary";
 
@@ -76,6 +76,12 @@ export async function POST(req: NextRequest) {
     try {
       parsed = await parseResume(buffer);
     } catch (err) {
+      if (err instanceof NotAResumeError) {
+        return errorResponse(
+          "This doesn't look like a resume. Upload your resume: it should have sections such as Education, Experience, Skills or Projects.",
+          422
+        );
+      }
       if (err instanceof OcrUnavailableError) {
         return errorResponse(
           "Reading images and scanned files is temporarily unavailable. Try a text-based PDF or DOCX.",
