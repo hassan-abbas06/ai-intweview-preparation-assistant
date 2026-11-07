@@ -477,7 +477,7 @@ export default function UserDashboardPage() {
                   <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
                     <FileText className="w-4 h-4" />
                   </div>
-                  <Badge variant="neutral">Coming Soon</Badge>
+                  <Badge variant="success">Available Now</Badge>
                 </div>
                 <CardTitle className="text-base mt-2">ATS Resume Scanner</CardTitle>
                 <CardDescription>
@@ -486,7 +486,7 @@ export default function UserDashboardPage() {
               </CardHeader>
               <CardFooter className="pt-2">
                 <Link href="/resume" className="w-full">
-                  <Button variant="outline" size="sm" className="w-full text-xs rounded-full">
+                  <Button variant="primary" size="sm" className="w-full text-xs rounded-full">
                     Analyze Resume
                   </Button>
                 </Link>
