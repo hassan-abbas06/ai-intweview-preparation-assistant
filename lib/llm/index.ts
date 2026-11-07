@@ -89,12 +89,22 @@ export function getLLMProvider(): LLMProvider {
 
   const preferredProvider = (process.env.LLM_PROVIDER || "auto").toLowerCase();
   const groqKey = process.env.GROQ_API_KEY?.trim();
+  const altGroqKey = process.env.ALTERNATIVE_GROQ_API_KEY_1?.trim();
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  const altGeminiKey = process.env.ALTERNATIVE_GEMINI_API_KEY_1?.trim();
+
+  const groqKeys: string[] = [];
+  if (groqKey) groqKeys.push(groqKey);
+  if (altGroqKey && altGroqKey !== groqKey) groqKeys.push(altGroqKey);
+
+  const geminiKeys: string[] = [];
+  if (geminiKey) geminiKeys.push(geminiKey);
+  if (altGeminiKey && altGeminiKey !== geminiKey) geminiKeys.push(altGeminiKey);
 
   let provider: LLMProvider;
 
-  const groq = groqKey ? new GroqProvider(groqKey) : null;
-  const gemini = geminiKey ? new GeminiProvider(geminiKey) : null;
+  const groq = groqKeys.length > 0 ? new GroqProvider(groqKeys) : null;
+  const gemini = geminiKeys.length > 0 ? new GeminiProvider(geminiKeys) : null;
 
   if (preferredProvider === "groq" && groq) {
     console.log("[LLM Provider] Explicitly selected Groq as primary LLM engine (with Gemini fallback if available).");
