@@ -1,6 +1,6 @@
 import { ParsedResume } from "../lib/resume/parse";
 import { scoreResume } from "../lib/resume/ats-score";
-import { extractJdKeywords } from "../lib/resume/keywords";
+import { extractJdKeywords, matchKeywords } from "../lib/resume/keywords";
 
 const GOOD_RESUME_TEXT = `
 Alice Dev
@@ -160,6 +160,13 @@ const extractedKeywords = extractJdKeywords(SAMPLE_JD);
 console.log(`Extracted ${extractedKeywords.length} keywords from JD:`);
 console.log(JSON.stringify(extractedKeywords, null, 2));
 
+// 1b. Test Non-Technical JD Keyword Extraction
+const NON_TECH_JD = "We are hiring an entry-level Operations Associate to support our customer service and inventory team. You will greet customers, track inventory levels, maintain accurate records in Excel, and communicate clearly with colleagues. Requirements: strong communication skills, attention to detail, teamwork, time management, and basic knowledge of Microsoft Excel. Experience with data entry, scheduling, and customer support is a plus.";
+console.log("\n--- 1b. Testing extractJdKeywords on Non-Technical JD ---");
+const nonTechKeywords = extractJdKeywords(NON_TECH_JD);
+console.log(`Extracted ${nonTechKeywords.length} keywords from Non-Technical JD:`);
+console.log(JSON.stringify(nonTechKeywords, null, 2));
+
 // 2. Score Good Resume (General mode)
 console.log("\n--- 2. Good Resume (General Mode) ---");
 const goodScore = scoreResume(goodResume);
@@ -271,4 +278,52 @@ assert(
   goodScore.keywords === null && targetedScore.keywords !== null && targetedScore.mode === "JOB_TARGETED"
 );
 
-console.log("\nAll 9 assertions passed successfully!");
+// Non-Technical JD Assertions
+assert(
+  "non-technical JD keywords do not include 'strong communication skills'",
+  nonTechKeywords.indexOf("strong communication skills") === -1
+);
+assert(
+  "non-technical JD keywords do not include 'customer'",
+  nonTechKeywords.indexOf("customer") === -1
+);
+assert(
+  "non-technical JD keywords do not include 'operations'",
+  nonTechKeywords.indexOf("operations") === -1
+);
+assert(
+  "non-technical JD keywords still include 'communication'",
+  nonTechKeywords.indexOf("communication") !== -1
+);
+assert("non-technical JD extracts at least 9 keywords", nonTechKeywords.length >= 9);
+
+const requiredNonTechTerms = [
+  "customer service",
+  "inventory",
+  "data entry",
+  "scheduling",
+  "teamwork",
+  "attention to detail",
+  "microsoft excel",
+];
+
+for (let i = 0; i < requiredNonTechTerms.length; i++) {
+  const term = requiredNonTechTerms[i];
+  assert(
+    `non-technical JD keywords include '${term}'`,
+    nonTechKeywords.indexOf(term) !== -1
+  );
+}
+
+console.log("\nFinal Extracted Keywords for Operations Associate JD:");
+console.log(JSON.stringify(nonTechKeywords, null, 2));
+
+// Low-trust guard verification: < 6 keywords yields lowTrust: true
+const lowCountKeywords = ["javascript", "typescript", "react"];
+const lowTrustResult = matchKeywords("React developer with javascript", lowCountKeywords);
+assert("fewer than 6 keywords produces lowTrust: true", lowTrustResult.lowTrust === true);
+
+const normalTrustResult = matchKeywords("Customer service representative with inventory and excel", nonTechKeywords);
+assert("6 or more keywords does not produce lowTrust: true", normalTrustResult.lowTrust !== true);
+
+console.log("\nAll assertions passed successfully!");

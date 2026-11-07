@@ -7,8 +7,10 @@ import { prisma } from "@/lib/prisma";
 import { successResponse, errorResponse, rateLimitResponse } from "@/lib/api-response";
 import { scoreResume } from "@/lib/resume/ats-score";
 import { ParsedResume } from "@/lib/resume/parse";
+import { generateSuggestions } from "@/lib/resume/suggestions";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const WINDOW_MS = 60 * 60 * 1000;
 const MAX_SCANS_PER_WINDOW = 20;
@@ -99,6 +101,15 @@ export async function POST(req: NextRequest) {
     // Deterministic ATS Scoring (No LLM calls)
     const result = scoreResume(parsed, trimmedJd);
 
+    // LLM suggestions (Grounded recommendations, null on failure/timeout)
+    const llmSuggestions = await generateSuggestions({
+      text: parsed.text,
+      checks: result.checks,
+      keywords: result.keywords,
+      mode: result.mode,
+      jdText: trimmedJd,
+    });
+
     // Create a NEW AtsScanLog row for every scan
     const scanRecord = await prisma.atsScanLog.create({
       data: {
@@ -110,7 +121,7 @@ export async function POST(req: NextRequest) {
         suggestions: {
           checks: result.checks,
           keywords: result.keywords,
-          llm: null,
+          llm: llmSuggestions,
           coverage: result.coverage,
           notChecked: result.notChecked,
           capReason: result.capReason,
@@ -130,6 +141,7 @@ export async function POST(req: NextRequest) {
         mode: result.mode,
         checks: result.checks,
         keywords: result.keywords,
+        llm: llmSuggestions,
       },
       "Resume scanned successfully."
     );
