@@ -523,6 +523,11 @@ export function scoreResume(
     const jdKeywords = extractJdKeywords(jdText);
     keywordResults = matchKeywords(text, jdKeywords);
     const { matchPercent, matched, missing } = keywordResults;
+    const keywordCount = matched.length + missing.length;
+    const isLowTrust = Boolean(keywordResults.lowTrust || keywordCount < 6);
+    const lowTrustSuffix = isLowTrust
+      ? ` (Note: only ${keywordCount} keyword${keywordCount === 1 ? "" : "s"} found in job description; match rate may be unreliable)`
+      : "";
 
     if (matchPercent >= THRESHOLD_JD_MATCH_PASS) {
       checks.push({
@@ -530,7 +535,7 @@ export function scoreResume(
         label: "Job Description Keyword Match",
         status: "pass",
         weight: WEIGHT_JD_MATCH,
-        detail: `Matched ${matched.length} of ${jdKeywords.length} target keywords (${matchPercent}% match).`,
+        detail: `Matched ${matched.length} of ${jdKeywords.length} target keywords (${matchPercent}% match).${lowTrustSuffix}`,
       });
     } else if (matchPercent >= THRESHOLD_JD_MATCH_WARN) {
       const topMissing = missing.slice(0, 5).join(", ");
@@ -539,7 +544,7 @@ export function scoreResume(
         label: "Job Description Keyword Match",
         status: "warn",
         weight: WEIGHT_JD_MATCH,
-        detail: `Moderate keyword alignment: matched ${matched.length} of ${jdKeywords.length} keywords (${matchPercent}%). Missing: ${topMissing}.`,
+        detail: `Moderate keyword alignment: matched ${matched.length} of ${jdKeywords.length} keywords (${matchPercent}%). Missing: ${topMissing}.${lowTrustSuffix}`,
       });
     } else {
       const topMissing = missing.slice(0, 5).join(", ");
@@ -548,7 +553,7 @@ export function scoreResume(
         label: "Job Description Keyword Match",
         status: "fail",
         weight: WEIGHT_JD_MATCH,
-        detail: `Low keyword alignment: matched ${matched.length} of ${jdKeywords.length} keywords (${matchPercent}%). Missing key terms: ${topMissing}.`,
+        detail: `Low keyword alignment: matched ${matched.length} of ${jdKeywords.length} keywords (${matchPercent}%). Missing key terms: ${topMissing}.${lowTrustSuffix}`,
       });
     }
   }

@@ -161,23 +161,37 @@ export async function generateSuggestions(
 
     const userMessage = `Resume Analysis Data:\n${JSON.stringify(promptPayload, null, 2)}\n\nProvide up to 6 bullet rewrites, up to 6 formatting notes for the flagged issues, and up to 8 JD gap recommendations. Return JSON only.`;
 
-    // 20 second timeout
     let timer: NodeJS.Timeout | null = null;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("Suggestions generation timed out after 20s")), 20000);
-    });
+    let rawResponse: string | null = null;
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Suggestions generation timed out after 20s")), 20000);
+      });
 
-    const llmPromise = provider.generateText({
-      systemInstruction: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMessage }],
-      temperature: 0.3,
-      maxOutputTokens: 2048,
-    });
+      const llmPromise = provider.generateText({
+        systemInstruction: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
+        temperature: 0.3,
+        maxOutputTokens: 2048,
+      });
 
-    const rawResponse = await Promise.race([llmPromise, timeoutPromise]);
-    if (timer) clearTimeout(timer);
+      rawResponse = await Promise.race([llmPromise, timeoutPromise]);
+    } catch (err: any) {
+      const isTimeout =
+        err?.message === "Suggestions generation timed out after 20s" ||
+        (err?.message && err.message.includes("timed out after 20s"));
+      if (isTimeout) {
+        console.warn(`[Suggestions] Timeout: ${err?.message || "Operation timed out after 20s"}`);
+      } else {
+        console.warn(`[Suggestions] Provider error: ${err?.message || err}`);
+      }
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
 
     if (!rawResponse || typeof rawResponse !== "string") {
+      console.warn("[Suggestions] Provider returned empty or non-string response");
       return null;
     }
 
@@ -185,17 +199,29 @@ export async function generateSuggestions(
     let parsedJson: unknown;
     try {
       parsedJson = JSON.parse(cleanedJson);
-    } catch {
+    } catch (parseErr: any) {
+      console.warn(`[Suggestions] JSON parse failure: ${parseErr?.message || parseErr}`);
       return null;
     }
 
     const validation = RawSuggestionsSchema.safeParse(parsedJson);
     if (!validation.success) {
+      const issueDetails = validation.error.issues
+        .map((iss) => `${iss.path.join(".")}: ${iss.message}`)
+        .join("; ");
+      console.warn(`[Suggestions] Zod validation failure: ${issueDetails}`);
       return null;
     }
 
     const { bulletRewrites, formattingNotes, jdGaps } = validation.data;
     const normalizedResume = normalizeForSubstr(truncatedResume);
+
+    // Track drop counts per guard
+    let droppedNotSubstring = 0;
+    let droppedWordCount = 0;
+    let droppedDigits = 0;
+    let droppedBannedWord = 0;
+    let droppedOutcomeWord = 0;
 
     // Filter bulletRewrites:
     // (1) original must be a substring of resume text (normalized)
@@ -208,7 +234,8 @@ export async function generateSuggestions(
       const r = bulletRewrites[i];
       const normOriginal = normalizeForSubstr(r.original);
       if (!normOriginal || !normalizedResume.includes(normOriginal)) {
-        console.warn(`[Suggestions Guard] Dropped rewrite: original is not a substring of resume ("${r.original}")`);
+        droppedNotSubstring++;
+        console.warn(`[Suggestions Guard] Dropped rewrite (not-substring): "${r.original}" not found in resume`);
         continue; // Original not in resume text
       }
 
@@ -216,8 +243,9 @@ export async function generateSuggestions(
       const origWordCount = r.original.trim().split(/\s+/).filter(Boolean).length;
       const impWordCount = r.improved.trim().split(/\s+/).filter(Boolean).length;
       if (origWordCount > 0 && impWordCount > origWordCount * 1.5) {
+        droppedWordCount++;
         console.warn(
-          `[Suggestions Guard] Dropped rewrite: improved word count (${impWordCount}) exceeds 1.5x original word count (${origWordCount}) for "${r.improved}"`
+          `[Suggestions Guard] Dropped rewrite (word-count): improved (${impWordCount} words) exceeds 1.5x original (${origWordCount} words) for "${r.improved}"`
         );
         continue;
       }
@@ -239,12 +267,12 @@ export async function generateSuggestions(
       }
 
       if (hasHallucinatedDigit) {
-        console.warn(`[Suggestions Guard] Dropped rewrite: invented unbracketed digits in "${r.improved}"`);
+        droppedDigits++;
+        console.warn(`[Suggestions Guard] Dropped rewrite (digits): invented unbracketed digits in "${r.improved}"`);
         continue; // Dropped because of invented digits
       }
 
       // Check banned inflation words (architected, engineered, spearheaded, etc.)
-      // Drop any rewrite whose improved contains a banned inflation word not in original
       let hasBannedWord = false;
       let detectedBanned = "";
       for (let b = 0; b < BANNED_INFLATION_WORDS.length; b++) {
@@ -258,14 +286,14 @@ export async function generateSuggestions(
       }
 
       if (hasBannedWord) {
+        droppedBannedWord++;
         console.warn(
-          `[Suggestions Guard] Dropped rewrite: contains banned inflation word "${detectedBanned}" not in original ("${r.improved}")`
+          `[Suggestions Guard] Dropped rewrite (banned-word: "${detectedBanned}") not in original ("${r.improved}")`
         );
         continue; // Dropped because of role/outcome inflation
       }
 
       // Check outcome words (reducing, improving, increasing, etc.)
-      // Drop any rewrite whose improved contains an outcome word not in original
       let hasOutcomeWord = false;
       let detectedOutcome = "";
       for (let o = 0; o < OUTCOME_WORDS.length; o++) {
@@ -279,14 +307,29 @@ export async function generateSuggestions(
       }
 
       if (hasOutcomeWord) {
+        droppedOutcomeWord++;
         console.warn(
-          `[Suggestions Guard] Dropped rewrite: contains outcome word "${detectedOutcome}" not in original ("${r.improved}")`
+          `[Suggestions Guard] Dropped rewrite (outcome-word: "${detectedOutcome}") not in original ("${r.improved}")`
         );
         continue; // Dropped because of invented outcome
       }
 
       validRewrites.push(r);
       if (validRewrites.length >= 6) break;
+    }
+
+    const totalDropped =
+      droppedNotSubstring +
+      droppedWordCount +
+      droppedDigits +
+      droppedBannedWord +
+      droppedOutcomeWord;
+
+    if (totalDropped > 0 || bulletRewrites.length > 0) {
+      console.warn(
+        `[Suggestions Guard] Summary: evaluated ${bulletRewrites.length} rewrites, accepted ${validRewrites.length}, dropped ${totalDropped} ` +
+        `(not-substring: ${droppedNotSubstring}, word-count: ${droppedWordCount}, digits: ${droppedDigits}, banned-words: ${droppedBannedWord}, outcomes: ${droppedOutcomeWord})`
+      );
     }
 
     // Filter formattingNotes: only for checks with status "warn" or "fail"
@@ -321,8 +364,8 @@ export async function generateSuggestions(
       formattingNotes: validNotes,
       jdGaps: validGaps,
     };
-  } catch (err) {
-    console.error("[Resume Suggestions Error]:", err);
-    return null; // Return null on any error or timeout per specification
+  } catch (err: any) {
+    console.warn(`[Suggestions] Unexpected error: ${err?.message || err}`);
+    return null;
   }
 }

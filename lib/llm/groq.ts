@@ -8,19 +8,28 @@ import {
 } from "./types";
 
 const GROQ_MODELS = [
-  "llama-3.3-70b-versatile",
-  "llama-3.1-8b-instant",
-  "mixtral-8x7b-32768",
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
+  "qwen/qwen3.8-27b",
 ];
 
 const MODEL_TIMEOUT_MS = 8000; // 8s timeout per model attempt for fast failover to instant models
 
 export class GroqProvider implements LLMProvider {
   name = "groq";
-  private client: Groq;
+  private instances: Array<{ client: Groq; label: string }>;
 
-  constructor(apiKey: string) {
-    this.client = new Groq({ apiKey });
+  constructor(apiKeyOrKeys: string | string[]) {
+    const keys = Array.isArray(apiKeyOrKeys)
+      ? apiKeyOrKeys.filter(Boolean)
+      : [apiKeyOrKeys].filter(Boolean);
+    this.instances = [];
+    for (let i = 0; i < keys.length; i++) {
+      this.instances.push({
+        client: new Groq({ apiKey: keys[i] }),
+        label: i === 0 ? "primary" : `alternative #${i}`,
+      });
+    }
   }
 
   private formatMessages(
@@ -39,7 +48,8 @@ export class GroqProvider implements LLMProvider {
     // Retain last 20 messages to prevent context window overflow in long interviews
     const recentMessages = messages.length > 20 ? messages.slice(-20) : messages;
 
-    for (const msg of recentMessages) {
+    for (let i = 0; i < recentMessages.length; i++) {
+      const msg = recentMessages[i];
       formatted.push({ role: msg.role, content: msg.content });
     }
 
@@ -55,50 +65,62 @@ export class GroqProvider implements LLMProvider {
     const errorsList: string[] = [];
     const startTime = Date.now();
 
-    for (const model of GROQ_MODELS) {
-      let timeoutHandle: NodeJS.Timeout | null = null;
-      try {
-        console.log(`[LLM:Groq] Requesting completion from ${model} (timeout: ${MODEL_TIMEOUT_MS}ms)...`);
-        
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutHandle = setTimeout(
-            () => reject(new Error(`Groq model ${model} timed out after ${MODEL_TIMEOUT_MS}ms`)),
-            MODEL_TIMEOUT_MS
+    for (let k = 0; k < this.instances.length; k++) {
+      const instance = this.instances[k];
+
+      for (let m = 0; m < GROQ_MODELS.length; m++) {
+        const model = GROQ_MODELS[m];
+        let timeoutHandle: NodeJS.Timeout | null = null;
+        try {
+          console.log(`[LLM:Groq] Requesting completion from ${model} (${instance.label} key, timeout: ${MODEL_TIMEOUT_MS}ms)...`);
+          
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(
+              () => reject(new Error(`Groq model ${model} timed out after ${MODEL_TIMEOUT_MS}ms`)),
+              MODEL_TIMEOUT_MS
+            );
+          });
+
+          const completionPromise = instance.client.chat.completions.create({
+            model,
+            messages,
+            temperature: options.temperature ?? 0.5,
+            max_tokens: options.maxOutputTokens ?? 200,
+          });
+
+          const completion = await Promise.race([completionPromise, timeoutPromise]);
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+
+          const text = completion.choices[0]?.message?.content || "";
+          const duration = Date.now() - startTime;
+          console.log(
+            `[LLM:Groq Success] Served by ${model} (${instance.label} key) in ${duration}ms (${text.length} chars)`
           );
-        });
 
-        const completionPromise = this.client.chat.completions.create({
-          model,
-          messages,
-          temperature: options.temperature ?? 0.5,
-          max_tokens: options.maxOutputTokens ?? 200,
-        });
-
-        const completion = await Promise.race([completionPromise, timeoutPromise]);
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-
-        const text = completion.choices[0]?.message?.content || "";
-        const duration = Date.now() - startTime;
-        console.log(
-          `[LLM:Groq Success] Served by ${model} in ${duration}ms (${text.length} chars)`
-        );
-
-        if (text) {
-          return text;
+          if (text) {
+            return text;
+          }
+        } catch (err: any) {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          lastError = err;
+          const msg = extractLLMErrorMessage(err);
+          errorsList.push(`${model} [${instance.label}]: ${msg}`);
+          console.warn(
+            `[LLM:Groq Fallback] Model ${model} on ${instance.label} key failed: ${msg}.`
+          );
+          if (msg.includes("401") || msg.includes("invalid_api_key") || msg.includes("403")) {
+            break;
+          }
         }
-      } catch (err: any) {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        lastError = err;
-        const msg = extractLLMErrorMessage(err);
-        errorsList.push(`${model}: ${msg}`);
-        console.warn(
-          `[LLM:Groq Fallback] Model ${model} failed: ${msg}. Trying next fallback model.`
-        );
+      }
+
+      if (k < this.instances.length - 1) {
+        console.warn(`[LLM:Groq Key Fallback] Primary Groq API key failed. Cascading to ALTERNATIVE_GROQ_API_KEY_1...`);
       }
     }
 
     const detailedError = errorsList.length > 0 ? errorsList.join(" | ") : extractLLMErrorMessage(lastError);
-    throw new Error(`Groq generation failed across all models: ${detailedError}`);
+    throw new Error(`Groq generation failed across all keys and models: ${detailedError}`);
   }
 
   async streamText(options: LLMStreamOptions): Promise<string> {
@@ -110,81 +132,93 @@ export class GroqProvider implements LLMProvider {
     const errorsList: string[] = [];
     const startTime = Date.now();
 
-    for (const model of GROQ_MODELS) {
-      let timeoutHandle: NodeJS.Timeout | null = null;
-      try {
-        console.log(`[LLM:Groq Stream] Starting stream from ${model} (TTFT timeout: ${MODEL_TIMEOUT_MS}ms)...`);
+    for (let k = 0; k < this.instances.length; k++) {
+      const instance = this.instances[k];
 
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutHandle = setTimeout(
-            () => reject(new Error(`Groq stream TTFT for ${model} timed out after ${MODEL_TIMEOUT_MS}ms`)),
-            MODEL_TIMEOUT_MS
+      for (let m = 0; m < GROQ_MODELS.length; m++) {
+        const model = GROQ_MODELS[m];
+        let timeoutHandle: NodeJS.Timeout | null = null;
+        try {
+          console.log(`[LLM:Groq Stream] Starting stream from ${model} (${instance.label} key, TTFT timeout: ${MODEL_TIMEOUT_MS}ms)...`);
+
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(
+              () => reject(new Error(`Groq stream TTFT for ${model} timed out after ${MODEL_TIMEOUT_MS}ms`)),
+              MODEL_TIMEOUT_MS
+            );
+          });
+
+          const streamPromise = instance.client.chat.completions.create({
+            model,
+            messages,
+            temperature: options.temperature ?? 0.5,
+            max_tokens: options.maxOutputTokens ?? 200,
+            stream: true,
+          });
+
+          const stream = await Promise.race([streamPromise, timeoutPromise]);
+          const iterator = stream[Symbol.asyncIterator]();
+
+          // Wait for first chunk to arrive within timeout window
+          const firstChunkResult = await Promise.race([iterator.next(), timeoutPromise]);
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+
+          options.onMeta?.({ provider: "groq", model });
+
+          let fullText = "";
+          const firstTokenTime = Date.now() - startTime;
+          console.log(
+            `[LLM:Groq TTFT] First token from ${model} (${instance.label} key) arrived in ${firstTokenTime}ms`
           );
-        });
 
-        const streamPromise = this.client.chat.completions.create({
-          model,
-          messages,
-          temperature: options.temperature ?? 0.5,
-          max_tokens: options.maxOutputTokens ?? 200,
-          stream: true,
-        });
+          if (!firstChunkResult.done && firstChunkResult.value) {
+            const firstDelta = firstChunkResult.value.choices[0]?.delta?.content || "";
+            if (firstDelta) {
+              fullText += firstDelta;
+              options.onChunk(firstDelta);
+            }
+          }
 
-        const stream = await Promise.race([streamPromise, timeoutPromise]);
-        const iterator = stream[Symbol.asyncIterator]();
+          // Stream subsequent tokens to completion
+          while (true) {
+            const { value, done } = await iterator.next();
+            if (done) break;
 
-        // Wait for first chunk to arrive within timeout window
-        const firstChunkResult = await Promise.race([iterator.next(), timeoutPromise]);
-        if (timeoutHandle) clearTimeout(timeoutHandle);
+            const delta = value.choices[0]?.delta?.content || "";
+            if (delta) {
+              fullText += delta;
+              options.onChunk(delta);
+            }
+          }
 
-        options.onMeta?.({ provider: "groq", model });
+          const totalTime = Date.now() - startTime;
+          console.log(
+            `[LLM:Groq Stream Done] Completed from ${model} (${instance.label} key) in ${totalTime}ms (Total chars: ${fullText.length})`
+          );
 
-        let fullText = "";
-        const firstTokenTime = Date.now() - startTime;
-        console.log(
-          `[LLM:Groq TTFT] First token from ${model} arrived in ${firstTokenTime}ms`
-        );
-
-        if (!firstChunkResult.done && firstChunkResult.value) {
-          const firstDelta = firstChunkResult.value.choices[0]?.delta?.content || "";
-          if (firstDelta) {
-            fullText += firstDelta;
-            options.onChunk(firstDelta);
+          if (fullText.length > 0) {
+            return fullText;
+          }
+        } catch (err: any) {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          lastError = err;
+          const msg = extractLLMErrorMessage(err);
+          errorsList.push(`${model} [${instance.label}]: ${msg}`);
+          console.warn(
+            `[LLM:Groq Stream Fallback] Model ${model} on ${instance.label} key failed: ${msg}.`
+          );
+          if (msg.includes("401") || msg.includes("invalid_api_key") || msg.includes("403")) {
+            break;
           }
         }
+      }
 
-        // Stream subsequent tokens to completion
-        while (true) {
-          const { value, done } = await iterator.next();
-          if (done) break;
-
-          const delta = value.choices[0]?.delta?.content || "";
-          if (delta) {
-            fullText += delta;
-            options.onChunk(delta);
-          }
-        }
-
-        const totalTime = Date.now() - startTime;
-        console.log(
-          `[LLM:Groq Stream Done] Completed from ${model} in ${totalTime}ms (Total chars: ${fullText.length})`
-        );
-
-        if (fullText.length > 0) {
-          return fullText;
-        }
-      } catch (err: any) {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        lastError = err;
-        const msg = extractLLMErrorMessage(err);
-        errorsList.push(`${model}: ${msg}`);
-        console.warn(
-          `[LLM:Groq Stream Fallback] Model ${model} failed: ${msg}. Trying next fallback model.`
-        );
+      if (k < this.instances.length - 1) {
+        console.warn(`[LLM:Groq Stream Key Fallback] Primary Groq API key failed. Cascading to ALTERNATIVE_GROQ_API_KEY_1...`);
       }
     }
 
     const detailedError = errorsList.length > 0 ? errorsList.join(" | ") : extractLLMErrorMessage(lastError);
-    throw new Error(`Groq streaming failed across all models: ${detailedError}`);
+    throw new Error(`Groq streaming failed across all keys and models: ${detailedError}`);
   }
 }

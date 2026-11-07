@@ -95,23 +95,35 @@ export async function POST(
       jdText: scanLog.jdText,
     });
 
+    if (newSuggestions === null) {
+      return successResponse(
+        { llm: null },
+        "AI suggestions are temporarily unavailable. Please try again in a minute."
+      );
+    }
+
     const updatedSuggestions = {
       ...existingSuggestions,
       llm: newSuggestions,
     };
 
-    await prisma.atsScanLog.update({
-      where: { id: scanLog.id },
-      data: {
-        suggestions: updatedSuggestions as unknown as Prisma.InputJsonValue,
-      },
-    });
+    try {
+      await prisma.atsScanLog.update({
+        where: { id: scanLog.id },
+        data: {
+          suggestions: updatedSuggestions as unknown as Prisma.InputJsonValue,
+        },
+      });
+    } catch (dbErr: any) {
+      console.warn("[Suggestions Route] Failed to persist suggestions to DB:", dbErr);
+    }
 
     return successResponse(
       { llm: newSuggestions },
       "Suggestions refreshed successfully."
     );
-  } catch (err) {
-    return errorResponse("Failed to refresh suggestions.", 500, err);
+  } catch (err: any) {
+    console.error("[Suggestions Route Error]:", err);
+    return errorResponse(err?.message || "Failed to refresh suggestions.", 500, err);
   }
 }

@@ -45,6 +45,7 @@ interface KeywordMatch {
   matchPercent: number;
   matched: string[];
   missing: string[];
+  lowTrust?: boolean;
 }
 
 interface BulletRewrite {
@@ -111,6 +112,7 @@ export default function ResumeScanResultPage() {
   const [isNotFound, setIsNotFound] = useState(false);
   const [loadError, setLoadError] = useState<{ status: number; message: string } | null>(null);
   const [retryingSuggestions, setRetryingSuggestions] = useState(false);
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"all" | "fail" | "warn" | "pass">("all");
 
@@ -171,6 +173,7 @@ export default function ResumeScanResultPage() {
   const handleRetrySuggestions = async () => {
     if (!scanId || retryingSuggestions) return;
     setRetryingSuggestions(true);
+    setRetryMessage(null);
     try {
       const res = await fetch(`/api/resume/${encodeURIComponent(scanId)}/suggestions`, {
         method: "POST",
@@ -182,20 +185,30 @@ export default function ResumeScanResultPage() {
         // Non-JSON response
       }
 
-      if (res.ok && json && !json.error && json.data?.llm) {
-        setScan((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            suggestions: {
-              ...prev.suggestions,
-              llm: json.data.llm,
-            },
-          };
-        });
+      if (res.ok && json && !json.error) {
+        if (json.data && json.data.llm) {
+          setScan((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              suggestions: {
+                ...prev.suggestions,
+                llm: json.data.llm,
+              },
+            };
+          });
+          setRetryMessage(null);
+        } else {
+          setRetryMessage("Still unavailable. Try again in a minute.");
+        }
+      } else {
+        const msg =
+          (json && typeof json.message === "string" && json.message.trim()) ||
+          "Still unavailable. Try again in a minute.";
+        setRetryMessage(msg);
       }
     } catch {
-      // Retry failed gracefully
+      setRetryMessage("Still unavailable. Try again in a minute.");
     } finally {
       setRetryingSuggestions(false);
     }
@@ -276,7 +289,20 @@ export default function ResumeScanResultPage() {
 
   const checks = scan.suggestions?.checks || [];
   const keywords = scan.suggestions?.keywords || null;
+  const keywordCount = keywords
+    ? (keywords.matched ? keywords.matched.length : 0) +
+      (keywords.missing ? keywords.missing.length : 0)
+    : 0;
+  const isKeywordLowTrust = Boolean(
+    keywords && (keywords.lowTrust || keywordCount < 6)
+  );
   const llm = scan.suggestions?.llm || null;
+  const isAllEmpty = Boolean(
+    llm &&
+      llm.bulletRewrites.length === 0 &&
+      llm.formattingNotes.length === 0 &&
+      llm.jdGaps.length === 0
+  );
 
   const failedChecks = [];
   const warnChecks = [];
@@ -420,7 +446,9 @@ export default function ResumeScanResultPage() {
                   <span className="text-xs text-slate-400">Match Rate:</span>
                   <Badge
                     variant={
-                      keywords.matchPercent >= 70
+                      isKeywordLowTrust
+                        ? "neutral"
+                        : keywords.matchPercent >= 70
                         ? "success"
                         : keywords.matchPercent >= 40
                         ? "warning"
@@ -437,11 +465,22 @@ export default function ResumeScanResultPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {isKeywordLowTrust && (
+                <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-xs">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p>
+                    Only {keywordCount} {keywordCount === 1 ? "keyword was" : "keywords were"} found in this job description, so the match rate may be unreliable. Paste the full posting, including the requirements section.
+                  </p>
+                </div>
+              )}
+
               {/* Progress Bar */}
               <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all duration-500 ${
-                    keywords.matchPercent >= 70
+                    isKeywordLowTrust
+                      ? "bg-slate-400 dark:bg-slate-500"
+                      : keywords.matchPercent >= 70
                       ? "bg-emerald-500"
                       : keywords.matchPercent >= 40
                       ? "bg-amber-500"
@@ -490,7 +529,11 @@ export default function ResumeScanResultPage() {
                       </span>
                     ))
                   ) : (
-                    <span className="text-xs text-slate-400 italic">None - excellent alignment!</span>
+                    <span className="text-xs text-slate-400 italic">
+                      {isKeywordLowTrust
+                        ? "No missing keywords found, but too few keywords were extracted to judge alignment."
+                        : "None - excellent alignment!"}
+                    </span>
                   )}
                 </div>
               </div>
@@ -652,7 +695,19 @@ export default function ResumeScanResultPage() {
             )}
           </div>
 
-          {llm === null ? (
+          {isAllEmpty ? (
+            <Card className="border-dashed border-slate-300 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50">
+              <CardContent className="py-8 text-center space-y-3">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  No safe rewrites were found for this resume
+                </p>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Your resume text was analyzed, but no bullet points required changes or any generated rewrites did not meet strict anti-hallucination grounding criteria.
+                </p>
+              </CardContent>
+            </Card>
+          ) : llm === null ? (
             <Card className="border-dashed border-slate-300 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50">
               <CardContent className="py-8 text-center space-y-3">
                 <Lightbulb className="w-8 h-8 text-amber-500 mx-auto" />
@@ -679,6 +734,11 @@ export default function ResumeScanResultPage() {
                     "Generate AI Suggestions Now"
                   )}
                 </Button>
+                {retryMessage && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 font-medium">
+                    {retryMessage}
+                  </p>
+                )}
               </CardContent>
             </Card>
           ) : (
