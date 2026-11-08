@@ -81,25 +81,37 @@ export class GroqProvider implements LLMProvider {
             );
           });
 
-          const completionPromise = instance.client.chat.completions.create({
+          const requestParams: any = {
             model,
             messages,
             temperature: options.temperature ?? 0.5,
             max_tokens: options.maxOutputTokens ?? 200,
-          });
+          };
+          if (model.includes("gpt-oss")) {
+            requestParams.reasoning_effort = "low";
+          }
+
+          const completionPromise = instance.client.chat.completions.create(requestParams);
 
           const completion = await Promise.race([completionPromise, timeoutPromise]);
           if (timeoutHandle) clearTimeout(timeoutHandle);
 
           const text = completion.choices[0]?.message?.content || "";
           const duration = Date.now() - startTime;
+
+          if (!text || text.trim().length === 0) {
+            console.warn(
+              `[LLM:Groq Fallback] Model ${model} on ${instance.label} key returned empty content (0 chars). Moving to next model.`
+            );
+            errorsList.push(`${model} [${instance.label}]: returned empty content`);
+            continue;
+          }
+
           console.log(
             `[LLM:Groq Success] Served by ${model} (${instance.label} key) in ${duration}ms (${text.length} chars)`
           );
 
-          if (text) {
-            return text;
-          }
+          return text;
         } catch (err: any) {
           if (timeoutHandle) clearTimeout(timeoutHandle);
           lastError = err;
@@ -148,15 +160,20 @@ export class GroqProvider implements LLMProvider {
             );
           });
 
-          const streamPromise = instance.client.chat.completions.create({
+          const streamParams: any = {
             model,
             messages,
             temperature: options.temperature ?? 0.5,
             max_tokens: options.maxOutputTokens ?? 200,
             stream: true,
-          });
+          };
+          if (model.includes("gpt-oss")) {
+            streamParams.reasoning_effort = "low";
+          }
 
-          const stream = await Promise.race([streamPromise, timeoutPromise]);
+          const streamPromise = instance.client.chat.completions.create(streamParams);
+
+          const stream = (await Promise.race([streamPromise, timeoutPromise])) as any;
           const iterator = stream[Symbol.asyncIterator]();
 
           // Wait for first chunk to arrive within timeout window

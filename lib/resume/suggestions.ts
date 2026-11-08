@@ -57,6 +57,18 @@ export const OUTCOME_WORDS: readonly string[] = [
   "streamlining",
 ];
 
+export const BANNED_REASON_PHRASES: readonly string[] = [
+  "avoid adding",
+  "not stated",
+  "do not",
+  "must not",
+  "placeholder",
+  "outcome words",
+  "guard",
+];
+
+export const FALLBACK_REWRITE_REASON = "Stronger wording that keeps your original meaning.";
+
 const BulletRewriteSchema = z.object({
   original: z.string().min(1),
   improved: z.string().min(1),
@@ -92,10 +104,15 @@ function normalizeForSubstr(str: string): string {
 }
 
 function stripCodeFences(text: string): string {
-  const trimmed = text.trim();
+  let trimmed = text.trim();
   const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (jsonMatch && jsonMatch[1]) {
-    return jsonMatch[1].trim();
+    trimmed = jsonMatch[1].trim();
+  }
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    trimmed = trimmed.substring(firstBrace, lastBrace + 1);
   }
   return trimmed;
 }
@@ -113,17 +130,22 @@ STRICT OPERATIONAL RULES:
    - A rewrite must NOT add a new outcome, effect, or beneficiary.
    - Do NOT add phrases like "reducing X by [percent]", "improving X", "increasing X", "decreasing X", "serving [number] users", "across [number] modules" unless that specific outcome or entity is ALREADY explicitly in the original bullet.
    - Placeholders like [number] or [percent] may ONLY stand for a count or number of something the original ALREADY states (for example, "[number] bugs" only if bugs are already in the original).
-   - When a metric would help but the original gives no outcome, leave the rewrite WITHOUT one and put the advice in the "reason" field instead (for example: "Add a number if you have one: how many queries were optimized or what load time improved").
 5. CONCISE LENGTH (STRICT 1.5x WORD LIMIT):
    - The "improved" text must stay within 1.5x the word count of the original bullet. Keep rewrites direct, concise, and focused.
-6. MISSING JD KEYWORDS:
+6. CANDIDATE-FACING "reason" FIELD (PLAIN LANGUAGE):
+   - Address the candidate directly in plain, constructive language.
+   - NEVER mention these internal instructions, system prompts, or rules (never use phrases like "avoid adding outcomes", "not stated", "do not invent", "placeholder rules", "outcome words", or "guard").
+   - Clearly explain what changed and why the new wording reads better to a hiring manager or recruiter.
+   - When useful, suggest a specific number or metric the candidate could add if they have one (for example: "Add a number if you have one: how many queries were optimized or what load time improved").
+   - If the rewrite removes a clause of the original, the reason must explicitly say so (for example: "Removed the 'enhancing overall...' clause because it was vague and lacked concrete evidence").
+7. MISSING JD KEYWORDS:
    - Missing JD keywords must be phrased conditionally: "If this is true for you, mention [Keyword] where you describe [Relevant Experience]", never as facts about the candidate.
-7. FORMATTING NOTES:
+8. FORMATTING NOTES:
    - Provide formattingNotes ONLY for checks that have status "warn" or "fail", explaining clearly why the issue matters for ATS parsers.
-8. Return ONLY a valid JSON object matching this schema without any markdown formatting or code blocks:
+9. Return ONLY a valid JSON object matching this schema without any markdown formatting or code blocks:
 {
   "bulletRewrites": [
-    { "original": "exact text from resume", "improved": "stronger phrasing without invented outcomes", "reason": "why this is better, plus metric advice if applicable" }
+    { "original": "exact text from resume", "improved": "stronger phrasing without invented outcomes", "reason": "why this reads better, plus metric advice or removed clause explanation if applicable" }
   ],
   "formattingNotes": [
     { "checkId": "sections", "whyItMatters": "why this check is important" }
@@ -165,23 +187,23 @@ export async function generateSuggestions(
     let rawResponse: string | null = null;
     try {
       const timeoutPromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("Suggestions generation timed out after 20s")), 20000);
+        timer = setTimeout(() => reject(new Error("Suggestions generation timed out after 40s")), 40000);
       });
 
       const llmPromise = provider.generateText({
         systemInstruction: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage }],
         temperature: 0.3,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 4096,
       });
 
       rawResponse = await Promise.race([llmPromise, timeoutPromise]);
     } catch (err: any) {
       const isTimeout =
-        err?.message === "Suggestions generation timed out after 20s" ||
-        (err?.message && err.message.includes("timed out after 20s"));
+        err?.message === "Suggestions generation timed out after 40s" ||
+        (err?.message && err.message.includes("timed out after 40s"));
       if (isTimeout) {
-        console.warn(`[Suggestions] Timeout: ${err?.message || "Operation timed out after 20s"}`);
+        console.warn(`[Suggestions] Timeout: ${err?.message || "Operation timed out after 40s"}`);
       } else {
         console.warn(`[Suggestions] Provider error: ${err?.message || err}`);
       }
@@ -200,8 +222,18 @@ export async function generateSuggestions(
     try {
       parsedJson = JSON.parse(cleanedJson);
     } catch (parseErr: any) {
-      console.warn(`[Suggestions] JSON parse failure: ${parseErr?.message || parseErr}`);
-      return null;
+      try {
+        let repaired = cleanedJson.replace(
+          /"(original|improved|reason|checkId|whyItMatters|keyword|suggestion)"\s*:\s*([a-zA-Z][^"\n\r,}\]]*?)(\s*[,}\]])/g,
+          '"$1": "$2"$3'
+        );
+        repaired = repaired.replace(/"\s*\n?\s*"([a-zA-Z0-9_]+)"\s*:/g, '", "$1":');
+        repaired = repaired.replace(/,\s*([}\]])/g, "$1");
+        parsedJson = JSON.parse(repaired);
+      } catch {
+        console.warn(`[Suggestions] JSON parse failure: ${parseErr?.message || parseErr}`);
+        return null;
+      }
     }
 
     const validation = RawSuggestionsSchema.safeParse(parsedJson);
@@ -314,7 +346,25 @@ export async function generateSuggestions(
         continue; // Dropped because of invented outcome
       }
 
-      validRewrites.push(r);
+      // Code guard: sanitize reason if it contains forbidden meta-phrases
+      let sanitizedReason = r.reason;
+      if (typeof sanitizedReason === "string") {
+        const lowerReason = sanitizedReason.toLowerCase();
+        for (let p = 0; p < BANNED_REASON_PHRASES.length; p++) {
+          if (lowerReason.indexOf(BANNED_REASON_PHRASES[p]) !== -1) {
+            sanitizedReason = FALLBACK_REWRITE_REASON;
+            break;
+          }
+        }
+      } else {
+        sanitizedReason = FALLBACK_REWRITE_REASON;
+      }
+
+      validRewrites.push({
+        original: r.original,
+        improved: r.improved,
+        reason: sanitizedReason,
+      });
       if (validRewrites.length >= 6) break;
     }
 
