@@ -110,6 +110,9 @@ function getCheckLabel(checkId: string, checks: AtsCheck[]): string {
   return checkId;
 }
 
+const MIN_JD_KEYWORDS_TO_SCORE = 4;
+const THRESHOLD_LOW_TRUST_KEYWORDS = 6;
+
 export default function ResumeScanResultPage() {
   const params = useParams();
   const router = useRouter();
@@ -303,11 +306,11 @@ export default function ResumeScanResultPage() {
     : 0;
   const jdMatchCheck = checks.find((c) => c.id === "jd_match");
   const isJdMatchNotChecked = Boolean(jdMatchCheck && jdMatchCheck.status === "not_checked");
-  const isNotScored = isJdMatchNotChecked || keywordCount === 0;
+  const isNotScored = isJdMatchNotChecked || keywordCount < MIN_JD_KEYWORDS_TO_SCORE;
   const isKeywordLowTrust = Boolean(
-    keywords && (keywords.lowTrust || keywordCount < 6)
+    keywords && (keywords.lowTrust || keywordCount < THRESHOLD_LOW_TRUST_KEYWORDS)
   );
-  const isLowTrust1to5 = !isNotScored && keywordCount >= 1 && keywordCount < 6;
+  const isLowTrust1to5 = !isNotScored && keywordCount >= 1 && keywordCount < THRESHOLD_LOW_TRUST_KEYWORDS;
   const inferredFromLlm = (keywords && Array.isArray(keywords.inferredFromLlm) ? keywords.inferredFromLlm : []) as string[];
   const hasInferredFromLlm = inferredFromLlm.length > 0;
   const llm = scan.suggestions?.llm || null;

@@ -350,6 +350,102 @@ export function termLiterallyInJd(jdText: string, term: string): boolean {
   return false;
 }
 
+export const MIN_JD_KEYWORDS_TO_SCORE = 4;
+export const THRESHOLD_LOW_TRUST_KEYWORDS = 6;
+
+const STEM_GUARD_STOPWORDS = new Set(["and", "of", "the", "for", "with"]);
+
+/**
+ * Simple stemmer: lowercase, strip trailing s, es, ing, or ed.
+ */
+export function simpleStem(word: string): string {
+  let w = word.toLowerCase().trim();
+  w = w.replace(/^[^a-z0-9+#]+|[^a-z0-9+#]+$/g, "");
+  if (!w || w.length <= 2) return w;
+
+  if (w.endsWith("ing") && w.length > 4) {
+    return w.slice(0, -3);
+  }
+  if (w.endsWith("ed") && w.length > 3) {
+    return w.slice(0, -2);
+  }
+  if (
+    (w.endsWith("sses") || w.endsWith("xes") || w.endsWith("ches") || w.endsWith("shes")) &&
+    w.length > 4
+  ) {
+    return w.slice(0, -2);
+  }
+  if (w.endsWith("s") && !w.endsWith("ss") && w.length > 2) {
+    return w.slice(0, -1);
+  }
+  return w;
+}
+
+export function extractJdWords(jdText: string): string[] {
+  if (!jdText) return [];
+  const rawTokens = jdText.toLowerCase().split(/[^a-z0-9+#.]+/);
+  const words: string[] = [];
+  for (let i = 0; i < rawTokens.length; i++) {
+    const t = rawTokens[i].replace(/^[.+]+|[.+]+$/g, "").trim();
+    if (t) {
+      words.push(t);
+    }
+  }
+  return words;
+}
+
+function wordMatchesJdWord(kwWord: string, jdWord: string): boolean {
+  if (kwWord === jdWord) return true;
+  const s1 = simpleStem(kwWord);
+  const s2 = simpleStem(jdWord);
+  if (s1 === s2) return true;
+
+  // Root / common prefix match (e.g. identification / identify share 7-char prefix 'identif')
+  if (s1.length >= 5 && s2.length >= 5) {
+    const minLen = Math.min(s1.length, s2.length);
+    let common = 0;
+    while (common < minLen && s1.charCodeAt(common) === s2.charCodeAt(common)) {
+      common++;
+    }
+    if (common >= 5 && common >= minLen - 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function keywordMatchesJdByStemming(rawKeyword: string, jdWords: string[]): boolean {
+  if (!rawKeyword || !jdWords || jdWords.length === 0) return false;
+  const rawLower = rawKeyword.toLowerCase().trim();
+  const tokens = rawLower.split(/\s+/).filter(Boolean);
+
+  const significantWords: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i].replace(/^[^a-z0-9+#]+|[^a-z0-9+#]+$/g, "");
+    if (t && !STEM_GUARD_STOPWORDS.has(t)) {
+      significantWords.push(t);
+    }
+  }
+
+  if (significantWords.length === 0) return false;
+
+  for (let i = 0; i < significantWords.length; i++) {
+    const sw = significantWords[i];
+    let matched = false;
+    for (let j = 0; j < jdWords.length; j++) {
+      if (wordMatchesJdWord(sw, jdWords[j])) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export type FallbackKeywordsArray = string[] & {
   keywords: string[];
   inferredFromLlm: string[];
@@ -455,11 +551,13 @@ ${jdText.slice(0, 4000)}`;
 
   // Code guard: keep an item only if it literally appears in the job
   // description text (case-insensitive, whole-word match, alias-aware)
+  // OR when every significant word matches a word in the JD after simple stemming,
   // and is not in STOPWORDS, JD_BOILERPLATE or GENERIC_SINGLE_WORDS.
   // Merge with the deterministic list, de-duplicate, cap at 20.
   const validInferred: string[] = [];
   const candidateMerged: string[] = deterministic.slice();
   const existingSet = new Set(candidateMerged);
+  const jdWords = extractJdWords(jdText);
 
   for (let i = 0; i < items.length; i++) {
     const raw = items[i].trim().toLowerCase();
@@ -477,7 +575,10 @@ ${jdText.slice(0, 4000)}`;
       continue;
     }
 
-    if (!termLiterallyInJd(jdText, raw)) {
+    const literallyInJd = termLiterallyInJd(jdText, raw);
+    const stemMatch = !literallyInJd && keywordMatchesJdByStemming(raw, jdWords);
+
+    if (!literallyInJd && !stemMatch) {
       continue;
     }
 
@@ -522,7 +623,7 @@ export function matchKeywords(
   keywords: string[],
   inferredFromLlm?: string[]
 ): KeywordMatchResult {
-  const isLowTrust = !keywords || keywords.length < 6;
+  const isLowTrust = !keywords || keywords.length < THRESHOLD_LOW_TRUST_KEYWORDS;
 
   if (!keywords || keywords.length === 0) {
     const emptyResult: KeywordMatchResult = {

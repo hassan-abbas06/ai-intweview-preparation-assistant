@@ -1,5 +1,12 @@
 import { ParsedResume } from "./parse";
-import { extractJdKeywords, matchKeywords, termMatches, KeywordMatchResult } from "./keywords";
+import {
+  extractJdKeywords,
+  matchKeywords,
+  termMatches,
+  KeywordMatchResult,
+  MIN_JD_KEYWORDS_TO_SCORE,
+  THRESHOLD_LOW_TRUST_KEYWORDS,
+} from "./keywords";
 import {
   SKILL_TERMS,
   STOPWORDS,
@@ -7,6 +14,8 @@ import {
   MODERATE_ACTION_VERBS,
   WEAK_ACTION_VERBS,
 } from "./skill-terms";
+
+export { MIN_JD_KEYWORDS_TO_SCORE, THRESHOLD_LOW_TRUST_KEYWORDS };
 
 // Constant score caps
 export const SCORE_CAP_KEYWORD_STUFFING = 70;
@@ -952,9 +961,9 @@ export function scoreResume(
     keywordResults = matchKeywords(text, finalJdKeywords, inferred);
     const { matchPercent, matched, missing } = keywordResults;
     const keywordCount = matched.length + missing.length;
-    const isLowTrust = Boolean(keywordResults.lowTrust || keywordCount < 6);
+    const isNotScored = keywordCount < MIN_JD_KEYWORDS_TO_SCORE;
 
-    if (isLowTrust) {
+    if (isNotScored) {
       checks.push({
         id: "jd_match",
         label: "Job Description Keyword Match",
@@ -963,35 +972,42 @@ export function scoreResume(
         detail: "Too few keywords found in the job description to score a match.",
         group: "content",
       });
-    } else if (matchPercent >= THRESHOLD_JD_MATCH_PASS) {
-      checks.push({
-        id: "jd_match",
-        label: "Job Description Keyword Match",
-        status: "pass",
-        weight: WEIGHT_JD_MATCH,
-        detail: `Matched ${matched.length} of ${finalJdKeywords.length} target keywords (${matchPercent}% match).`,
-        group: "content",
-      });
-    } else if (matchPercent >= THRESHOLD_JD_MATCH_WARN) {
-      const topMissing = missing.slice(0, 5).join(", ");
-      checks.push({
-        id: "jd_match",
-        label: "Job Description Keyword Match",
-        status: "warn",
-        weight: WEIGHT_JD_MATCH,
-        detail: `Moderate keyword alignment: matched ${matched.length} of ${finalJdKeywords.length} keywords (${matchPercent}%). Missing: ${topMissing}.`,
-        group: "content",
-      });
     } else {
-      const topMissing = missing.slice(0, 5).join(", ");
-      checks.push({
-        id: "jd_match",
-        label: "Job Description Keyword Match",
-        status: "fail",
-        weight: WEIGHT_JD_MATCH,
-        detail: `Low keyword alignment: matched ${matched.length} of ${finalJdKeywords.length} keywords (${matchPercent}%). Missing key terms: ${topMissing}.`,
-        group: "content",
-      });
+      const isLowTrust = Boolean(keywordResults.lowTrust || keywordCount < THRESHOLD_LOW_TRUST_KEYWORDS);
+      const lowTrustSuffix = isLowTrust
+        ? ` (Note: only ${keywordCount} keyword${keywordCount === 1 ? "" : "s"} found in job description; match rate may be unreliable)`
+        : "";
+
+      if (matchPercent >= THRESHOLD_JD_MATCH_PASS) {
+        checks.push({
+          id: "jd_match",
+          label: "Job Description Keyword Match",
+          status: "pass",
+          weight: WEIGHT_JD_MATCH,
+          detail: `Matched ${matched.length} of ${finalJdKeywords.length} target keywords (${matchPercent}% match).${lowTrustSuffix}`,
+          group: "content",
+        });
+      } else if (matchPercent >= THRESHOLD_JD_MATCH_WARN) {
+        const topMissing = missing.slice(0, 5).join(", ");
+        checks.push({
+          id: "jd_match",
+          label: "Job Description Keyword Match",
+          status: "warn",
+          weight: WEIGHT_JD_MATCH,
+          detail: `Moderate keyword alignment: matched ${matched.length} of ${finalJdKeywords.length} keywords (${matchPercent}%). Missing: ${topMissing}.${lowTrustSuffix}`,
+          group: "content",
+        });
+      } else {
+        const topMissing = missing.slice(0, 5).join(", ");
+        checks.push({
+          id: "jd_match",
+          label: "Job Description Keyword Match",
+          status: "fail",
+          weight: WEIGHT_JD_MATCH,
+          detail: `Low keyword alignment: matched ${matched.length} of ${finalJdKeywords.length} keywords (${matchPercent}%). Missing key terms: ${topMissing}.${lowTrustSuffix}`,
+          group: "content",
+        });
+      }
     }
   }
 

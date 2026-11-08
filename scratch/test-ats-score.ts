@@ -781,6 +781,89 @@ async function runAsyncFallbackTests() {
     marketingTargetedScore.score !== nursingTargetedScore.score
   );
 
+  // 15. Test Software Tester JD with Fake LLM & Stemming Fallback
+  console.log("\n--- 15. Testing Software Tester JD with Fake LLM & Stemming Fallback ---");
+  const SOFTWARE_TESTER_JD =
+    "We are looking for a detail-oriented Software Tester to join our engineering team. In this role, you will review system requirements, design comprehensive test plans, and execute manual and automated tests to identify bugs and performance issues. You will work closely with developers, product managers, and designers to deliver high-quality, reliable software";
+
+  const fakeTesterLlm = async (_prompt: string): Promise<string> => {
+    return JSON.stringify([
+      "software testing",
+      "test plans",
+      "manual testing",
+      "automated testing",
+      "performance testing",
+      "bug identification",
+      "selenium",
+      "jira",
+      "requirements review",
+    ]);
+  };
+
+  const testerFallback = await extractJdKeywordsWithFallback(SOFTWARE_TESTER_JD, fakeTesterLlm);
+  console.log(`Tester fallback returned ${testerFallback.length} keywords:`);
+  console.log(JSON.stringify(testerFallback, null, 2));
+
+  // Assert selenium and jira dropped
+  assert("selenium is dropped from tester keywords", testerFallback.indexOf("selenium") === -1);
+  assert("jira is dropped from tester keywords", testerFallback.indexOf("jira") === -1);
+
+  // Assert others kept
+  const expectedTesterKept = [
+    "software testing",
+    "test plans",
+    "manual testing",
+    "automated testing",
+    "performance testing",
+    "bug identification",
+    "requirements review",
+  ];
+  for (let i = 0; i < expectedTesterKept.length; i++) {
+    const kw = expectedTesterKept[i];
+    assert(`tester keyword '${kw}' is kept`, testerFallback.indexOf(kw) !== -1);
+  }
+
+  // Assert at least 4 keywords remain
+  assert("at least 4 keywords remain from tester fallback", testerFallback.length >= 4);
+
+  // Score entry-level resume against Software Tester JD
+  const entryLevelTesterScore = scoreResume(entryLevelResume, SOFTWARE_TESTER_JD, testerFallback);
+  logScoreResult("Entry-Level Resume with Software Tester JD", entryLevelTesterScore);
+
+  const testerJdMatchCheck = entryLevelTesterScore.checks.find((c) => c.id === "jd_match");
+  assert(
+    "job-targeted scan of entry-level resume against tester JD is scored (jd_match not not_checked)",
+    Boolean(testerJdMatchCheck && testerJdMatchCheck.status !== "not_checked")
+  );
+  assert(
+    "job-targeted scan of entry-level resume against tester JD differs from general mode",
+    entryLevelTesterScore.score !== entryLevelScore.score ||
+      entryLevelTesterScore.subScores.content !== entryLevelScore.subScores.content ||
+      entryLevelTesterScore.mode !== entryLevelScore.mode
+  );
+
+  // 16. Threshold verification: 3 keywords is not_checked, 4 keywords is scored
+  console.log("\n--- 16. Testing Keyword Threshold Boundaries (3 vs 4 keywords) ---");
+  const threeKeywords = ["react", "typescript", "sql"];
+  const threeKeywordsScore = scoreResume(entryLevelResume, SOFTWARE_TESTER_JD, threeKeywords);
+  const threeJdMatch = threeKeywordsScore.checks.find((c) => c.id === "jd_match");
+  assert(
+    "3 keywords results in jd_match status 'not_checked'",
+    threeJdMatch?.status === "not_checked"
+  );
+
+  const fourKeywords = ["react", "typescript", "sql", "jira"];
+  const fourKeywordsScore = scoreResume(entryLevelResume, SOFTWARE_TESTER_JD, fourKeywords);
+  const fourJdMatch = fourKeywordsScore.checks.find((c) => c.id === "jd_match");
+  assert(
+    "4 keywords results in scored jd_match (not not_checked)",
+    Boolean(fourJdMatch && fourJdMatch.status !== "not_checked")
+  );
+  assert(
+    "4 keywords still produces lowTrust: true (1-5 range)",
+    fourKeywordsScore.keywords?.lowTrust === true
+  );
+
   console.log("\nAll fallback and cross-mode assertions passed successfully!");
 }
 
