@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
 import { successResponse, errorResponse, rateLimitResponse } from "@/lib/api-response";
 import { scoreResume } from "@/lib/resume/ats-score";
+import { extractJdKeywordsWithFallback } from "@/lib/resume/keywords";
 import { ParsedResume } from "@/lib/resume/parse";
 import { generateSuggestions } from "@/lib/resume/suggestions";
 
@@ -98,8 +99,21 @@ export async function POST(req: NextRequest) {
       return errorResponse("Resume has no usable text layer.", 422);
     }
 
-    // Deterministic ATS Scoring (No LLM calls)
-    const result = scoreResume(parsed, trimmedJd);
+    // In job-targeted mode, extract JD keywords with fallback first
+    let extractedJdKeywords: string[] | undefined = undefined;
+    let inferredFromLlm: string[] = [];
+
+    if (trimmedJd) {
+      const fallbackResult = await extractJdKeywordsWithFallback(trimmedJd);
+      extractedJdKeywords = fallbackResult.keywords || fallbackResult;
+      inferredFromLlm = fallbackResult.inferredFromLlm || [];
+    }
+
+    // ATS Scoring (using fallback keywords in job-targeted mode)
+    const result = scoreResume(parsed, trimmedJd, extractedJdKeywords);
+    if (result.keywords) {
+      result.keywords.inferredFromLlm = inferredFromLlm;
+    }
 
     // LLM suggestions (Grounded recommendations, null on failure/timeout)
     const llmSuggestions = await generateSuggestions({
@@ -126,6 +140,7 @@ export async function POST(req: NextRequest) {
           notChecked: result.notChecked,
           capReason: result.capReason,
           rawScore: result.rawScore,
+          subScores: result.subScores,
         } as unknown as Prisma.InputJsonValue,
       },
     });
@@ -142,6 +157,7 @@ export async function POST(req: NextRequest) {
         checks: result.checks,
         keywords: result.keywords,
         llm: llmSuggestions,
+        subScores: result.subScores,
       },
       "Resume scanned successfully."
     );

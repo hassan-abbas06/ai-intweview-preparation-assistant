@@ -46,6 +46,7 @@ interface KeywordMatch {
   matched: string[];
   missing: string[];
   lowTrust?: boolean;
+  inferredFromLlm?: string[];
 }
 
 interface BulletRewrite {
@@ -70,6 +71,11 @@ interface LlmSuggestions {
   jdGaps: JdGap[];
 }
 
+interface AtsSubScores {
+  formatting: number;
+  content: number;
+}
+
 interface ScanData {
   id: string;
   resumeId: string;
@@ -82,6 +88,7 @@ interface ScanData {
   capReason: string | null;
   jdText: string | null;
   timestamp: string;
+  subScores?: AtsSubScores | null;
   suggestions: {
     checks: AtsCheck[];
     keywords: KeywordMatch | null;
@@ -90,6 +97,7 @@ interface ScanData {
     notChecked?: string[];
     capReason?: string | null;
     rawScore?: number;
+    subScores?: AtsSubScores | null;
   };
 }
 
@@ -293,9 +301,15 @@ export default function ResumeScanResultPage() {
     ? (keywords.matched ? keywords.matched.length : 0) +
       (keywords.missing ? keywords.missing.length : 0)
     : 0;
+  const jdMatchCheck = checks.find((c) => c.id === "jd_match");
+  const isJdMatchNotChecked = Boolean(jdMatchCheck && jdMatchCheck.status === "not_checked");
+  const isNotScored = isJdMatchNotChecked || keywordCount === 0;
   const isKeywordLowTrust = Boolean(
     keywords && (keywords.lowTrust || keywordCount < 6)
   );
+  const isLowTrust1to5 = !isNotScored && keywordCount >= 1 && keywordCount < 6;
+  const inferredFromLlm = (keywords && Array.isArray(keywords.inferredFromLlm) ? keywords.inferredFromLlm : []) as string[];
+  const hasInferredFromLlm = inferredFromLlm.length > 0;
   const llm = scan.suggestions?.llm || null;
   const isAllEmpty = Boolean(
     llm &&
@@ -303,6 +317,7 @@ export default function ResumeScanResultPage() {
       llm.formattingNotes.length === 0 &&
       llm.jdGaps.length === 0
   );
+  const subScores = scan.subScores || scan.suggestions?.subScores || null;
 
   const failedChecks = [];
   const warnChecks = [];
@@ -386,7 +401,7 @@ export default function ResumeScanResultPage() {
 
             {/* Overall ATS Score Badge */}
             <div
-              className={`flex items-center gap-4 px-6 py-4 rounded-2xl border ${scoreBg} shrink-0`}
+              className={`flex flex-col items-center sm:items-end justify-center px-6 py-4 rounded-2xl border ${scoreBg} shrink-0`}
             >
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -397,6 +412,27 @@ export default function ResumeScanResultPage() {
                   <span className="text-lg text-slate-400 font-medium">/100</span>
                 </div>
               </div>
+              {subScores && (
+                <div className="mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-800/80 flex items-center gap-3 text-xs w-full justify-between sm:justify-end">
+                  <div className="text-left sm:text-right">
+                    <span className="text-[10px] uppercase font-semibold text-slate-400 block tracking-wider">
+                      ATS formatting
+                    </span>
+                    <span className="font-bold text-slate-700 dark:text-slate-200">
+                      {subScores.formatting}%
+                    </span>
+                  </div>
+                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-700" />
+                  <div className="text-left sm:text-right">
+                    <span className="text-[10px] uppercase font-semibold text-slate-400 block tracking-wider">
+                      Content strength
+                    </span>
+                    <span className="font-bold text-slate-700 dark:text-slate-200">
+                      {subScores.content}%
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -443,21 +479,29 @@ export default function ResumeScanResultPage() {
                   </CardTitle>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">Match Rate:</span>
-                  <Badge
-                    variant={
-                      isKeywordLowTrust
-                        ? "neutral"
-                        : keywords.matchPercent >= 70
-                        ? "success"
-                        : keywords.matchPercent >= 40
-                        ? "warning"
-                        : "error"
-                    }
-                    className="text-xs font-bold"
-                  >
-                    {keywords.matchPercent}%
-                  </Badge>
+                  {isNotScored ? (
+                    <Badge variant="neutral" className="text-xs font-bold">
+                      Not scored
+                    </Badge>
+                  ) : (
+                    <>
+                      <span className="text-xs text-slate-400">Match Rate:</span>
+                      <Badge
+                        variant={
+                          isKeywordLowTrust
+                            ? "neutral"
+                            : keywords.matchPercent >= 70
+                            ? "success"
+                            : keywords.matchPercent >= 40
+                            ? "warning"
+                            : "error"
+                        }
+                        className="text-xs font-bold"
+                      >
+                        {keywords.matchPercent}%
+                      </Badge>
+                    </>
+                  )}
                 </div>
               </div>
               <CardDescription className="text-xs">
@@ -465,78 +509,95 @@ export default function ResumeScanResultPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {isKeywordLowTrust && (
+              {isNotScored ? (
                 <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-xs">
                   <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                   <p>
-                    Only {keywordCount} {keywordCount === 1 ? "keyword was" : "keywords were"} found in this job description, so the match rate may be unreliable. Paste the full posting, including the requirements section.
+                    We couldn't find enough recognizable skills in this job description, so the job match was not scored and this result is the same as a general scan. Paste the full posting, including the requirements section.
                   </p>
                 </div>
+              ) : (
+                <>
+                  {isLowTrust1to5 && (
+                    <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-xs">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <p>
+                        Only {keywordCount} {keywordCount === 1 ? "keyword was" : "keywords were"} found in this job description, so the match rate may be unreliable. Paste the full posting, including the requirements section.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 ${
+                        isKeywordLowTrust
+                          ? "bg-slate-400 dark:bg-slate-500"
+                          : keywords.matchPercent >= 70
+                          ? "bg-emerald-500"
+                          : keywords.matchPercent >= 40
+                          ? "bg-amber-500"
+                          : "bg-rose-500"
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(0, keywords.matchPercent))}%` }}
+                    />
+                  </div>
+
+                  {/* Matched Keywords */}
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Matched Keywords (
+                      {keywords.matched.length})
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {keywords.matched.length > 0 ? (
+                        keywords.matched.map((kw) => (
+                          <span
+                            key={kw}
+                            className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60"
+                          >
+                            {kw}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">No matching keywords found</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Missing Keywords */}
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Missing Job Keywords (
+                      {keywords.missing.length})
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {keywords.missing.length > 0 ? (
+                        keywords.missing.map((kw) => (
+                          <span
+                            key={kw}
+                            className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60"
+                          >
+                            {kw}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">
+                          {isKeywordLowTrust
+                            ? "No missing keywords found, but too few keywords were extracted to judge alignment."
+                            : "None - excellent alignment!"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
 
-              {/* Progress Bar */}
-              <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-500 ${
-                    isKeywordLowTrust
-                      ? "bg-slate-400 dark:bg-slate-500"
-                      : keywords.matchPercent >= 70
-                      ? "bg-emerald-500"
-                      : keywords.matchPercent >= 40
-                      ? "bg-amber-500"
-                      : "bg-rose-500"
-                  }`}
-                  style={{ width: `${Math.min(100, Math.max(0, keywords.matchPercent))}%` }}
-                />
-              </div>
-
-              {/* Matched Keywords */}
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Matched Keywords (
-                  {keywords.matched.length})
+              {hasInferredFromLlm && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 pt-1">
+                  Some keywords were identified by AI from the job description text.
                 </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {keywords.matched.length > 0 ? (
-                    keywords.matched.map((kw) => (
-                      <span
-                        key={kw}
-                        className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60"
-                      >
-                        {kw}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs text-slate-400 italic">No matching keywords found</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Missing Keywords */}
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Missing Job Keywords (
-                  {keywords.missing.length})
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {keywords.missing.length > 0 ? (
-                    keywords.missing.map((kw) => (
-                      <span
-                        key={kw}
-                        className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60"
-                      >
-                        {kw}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs text-slate-400 italic">
-                      {isKeywordLowTrust
-                        ? "No missing keywords found, but too few keywords were extracted to judge alignment."
-                        : "None - excellent alignment!"}
-                    </span>
-                  )}
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         )}

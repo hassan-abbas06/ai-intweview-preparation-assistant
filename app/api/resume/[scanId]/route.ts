@@ -66,6 +66,7 @@ export async function GET(
       coverage: (suggestionsObj.coverage as number) ?? 100,
       notChecked: (suggestionsObj.notChecked as string[]) ?? [],
       capReason: (suggestionsObj.capReason as string | null) ?? null,
+      subScores: (suggestionsObj.subScores as { formatting: number; content: number } | undefined) ?? null,
       suggestions: scanLog.suggestions,
       jdText: scanLog.jdText,
       timestamp: scanLog.timestamp,
