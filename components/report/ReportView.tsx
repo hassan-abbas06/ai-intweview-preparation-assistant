@@ -633,6 +633,7 @@ export function ReportView({ sessionId, report, status }: ReportViewProps) {
       <LearningRecommendationsCard
         status={report.recommendationsStatus}
         recommendations={report.recommendations}
+        overallScore={report.overallScore}
       />
 
       {/* Footer Navigation */}

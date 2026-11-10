@@ -23,6 +23,7 @@ export interface LearningRecommendationItem {
 interface LearningRecommendationsCardProps {
   status?: string | null;
   recommendations?: LearningRecommendationItem[] | null;
+  overallScore?: number | null;
 }
 
 function formatDuration(totalSeconds: number | null): string | null {
@@ -35,6 +36,7 @@ function formatDuration(totalSeconds: number | null): string | null {
 export function LearningRecommendationsCard({
   status,
   recommendations,
+  overallScore,
 }: LearningRecommendationsCardProps) {
   // FAILED, unknown, or missing status: render nothing (no error banner by design)
   if (!status || status === "FAILED") return null;
@@ -49,6 +51,7 @@ export function LearningRecommendationsCard({
   }
 
   if (status === "SKIPPED") {
+    if (typeof overallScore !== "number") return null;
     return (
       <Card className="print:hidden">
         <CardContent>
