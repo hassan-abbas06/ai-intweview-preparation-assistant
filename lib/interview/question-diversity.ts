@@ -1,4 +1,4 @@
-﻿import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { InterviewType } from "@prisma/client";
 
 // ============================================================================
@@ -481,16 +481,127 @@ export function validateCandidateQuestion(
 // ============================================================================
 
 /**
- * Returns specific scenario variation angles for prompt injection tailored to domain and pillar.
+ * Returns specific scenario variation angles for prompt injection tailored to domain, track, and pillar.
  */
 export function getScenarioDiversificationGuidelines(
   pillarIndex: number,
   pillarName?: string,
   domain?: string | null,
-  difficulty?: string
+  difficulty?: string,
+  type?: string,
+  focusArea?: string | null
 ): string {
   const diff = (difficulty || "MID").toUpperCase();
   const normDomain = (domain || "").toLowerCase().trim();
+  const normFocus = (focusArea || "").toLowerCase().trim();
+  const roundType = (type || "").toUpperCase();
+
+  // 0A. MANAGERIAL LEADERSHIP GUIDELINES
+  if (roundType === "MANAGERIAL") {
+    const managerialGuidelines: Record<number, string[]> = {
+      0: [
+        "Variation Angle 1 (Tech Debt vs Product Deadline): Product leadership demands shipping a major customer feature in 6 weeks, but engineering warns that core architecture debt creates severe stability risks. How do you quantify this risk, allocate sprint capacity, and negotiate with stakeholders?",
+        "Variation Angle 2 (Monolith to Services Migration): Deciding when and how to carve out 25-30% of engineering bandwidth to remediate legacy technical debt while maintaining regular feature velocity.",
+        "Variation Angle 3 (Managing On-Call & Firefighting Toil): Unplanned production incidents and operational toil are eroding sprint velocity by 35%. How do you restructure team priorities to address root causes?",
+      ],
+      1: [
+        "Variation Angle 1 (Coaching Disengaged Senior Talent): A previously high-performing senior engineer begins missing commitments, becomes defensive in code reviews, and isolates from the team. Walk through your 1-on-1 coaching framework and remediation plan.",
+        "Variation Angle 2 (Structuring an Objective PIP): How do you determine when underperformance requires a formal Performance Improvement Plan (PIP), and how do you design fair, measurable 30/60/90-day milestones?",
+        "Variation Angle 3 (Navigating Misaligned Promotion Expectations): An engineer expects a promotion to Staff this cycle, but their organizational influence and technical leadership are not yet at that bar. How do you deliver that feedback constructively?",
+      ],
+      2: [
+        "Variation Angle 1 (Executive Scope Creep): The VP of Sales promises an enterprise customer a custom architectural feature to close a quarterly deal without consulting engineering. How do you navigate this with executive peers while protecting team sustainability?",
+        "Variation Angle 2 (Engineering vs Product Deadlock): Your tech lead and product manager are in an intractable disagreement over building for speed-to-market versus full multi-region scalability. How do you step in and drive resolution?",
+        "Variation Angle 3 (Psychological Safety & Early Warning): Creating an engineering culture where engineers feel safe flagging critical technical flaws early without fear of blame or missing deadlines.",
+      ],
+      3: [
+        "Variation Angle 1 (Squad Topology & Scaling): Reorganizing an engineering group growing from 10 to 30 engineers into autonomous domain pods with clear ownership boundaries to minimize coordination overhead.",
+        "Variation Angle 2 (Hiring Calibration & Anti-Bias): Designing an engineering interview rubric and panel calibration process that scales hiring rapidly without lowering the technical bar or introducing bias.",
+        "Variation Angle 3 (Onboarding Velocity): Accelerating time-to-first-production-PR for new engineering hires from 3 weeks down to 4 days across a complex codebase.",
+      ],
+    };
+    const angles = managerialGuidelines[pillarIndex] || managerialGuidelines[0];
+    return `
+SCENARIO DIVERSIFICATION DIRECTIVE (MANAGERIAL LEADERSHIP ROUND):
+Evaluate the candidate as an experienced ENGINEERING LEADER (EM / Director). Explore an authentic leadership dilemma:
+- ${angles.join("\n- ")}
+- Focus strictly on leadership tradeoffs, people coaching, team dynamics, and cross-functional alignment.
+- ABSOLUTE PROHIBITION: NEVER quiz the candidate on programming language syntax, data structures, or code mechanics. NEVER frame the candidate as a junior developer.
+`.trim();
+  }
+
+  // 0B. HR / BEHAVIORAL GUIDELINES
+  if (roundType === "HR") {
+    const hrGuidelines: Record<number, string[]> = {
+      0: [
+        "Variation Angle 1 (Constructive Disagreement): Tell me about a time you had a fundamental disagreement with a colleague or lead on project direction. How did you handle it and reach alignment?",
+        "Variation Angle 2 (Handling Difficult Stakeholders): Working with a demanding external partner or stakeholder who had conflicting expectations.",
+        "Variation Angle 3 (De-escalating Friction): Stepping in to de-escalate tension or friction within a cross-functional project team.",
+      ],
+      1: [
+        "Variation Angle 1 (Slipping Project Deadline): Describe a project you owned that fell behind schedule. How did you communicate the risk and recover?",
+        "Variation Angle 2 (Difficult Trade-off Under Pressure): Having to cut scope or make an uncomfortable compromise to meet a critical launch date.",
+        "Variation Angle 3 (Accountability for a Mistake): A time an oversight or decision of yours caused an issue. How did you own it and rectify it?",
+      ],
+      2: [
+        "Variation Angle 1 (Tough Constructive Feedback): The hardest piece of critical feedback you received in your career, and how you acted on it.",
+        "Variation Angle 2 (Mentoring a Teammate): Coaching or mentoring a colleague who was struggling with a challenging project or onboarding.",
+        "Variation Angle 3 (Receiving Unfair Pushback): How you handled a situation where you felt your ideas were unfairly dismissed or misunderstood.",
+      ],
+      3: [
+        "Variation Angle 1 (Pivoting Under Changing Priorities): Company priorities shifted abruptly and you had to drop a project you worked hard on.",
+        "Variation Angle 2 (Stepping Outside Your Comfort Zone): Taking on a project involving completely unfamiliar domains or ambiguous requirements.",
+        "Variation Angle 3 (Long-Term Motivation): What drives your work day-to-day and how you stay resilient during stressful delivery cycles.",
+      ],
+    };
+    const angles = hrGuidelines[pillarIndex] || hrGuidelines[0];
+    return `
+SCENARIO DIVERSIFICATION DIRECTIVE (HR / BEHAVIORAL ROUND):
+Evaluate the candidate using behavioral STAR format:
+- ${angles.join("\n- ")}
+- Probe genuine human collaboration, accountability, and interpersonal dynamics.
+- STRICT RULE: NEVER ask coding, syntax, or technical system design questions.
+`.trim();
+  }
+
+  // 0C. FRONTEND ENGINEERING GUIDELINES
+  if (normFocus.includes("front") || normDomain.includes("front")) {
+    const frontendGuidelines: Record<number, string[]> = {
+      0: [
+        "Variation Angle 1 (Complex Form & State Sync): A multi-step enterprise onboarding form has interdependent fields, dynamic validation, and server draft auto-saving. How do you design state boundaries between local component state, form state, and URL query params to avoid re-rendering the whole page on every keystroke?",
+        "Variation Angle 2 (Custom Hook Architecture): Designing an abortable, reusable custom hook for infinite scroll pagination with DOM virtualization and request deduplication.",
+        "Variation Angle 3 (Context vs External Store): Defending choosing Zustand or Redux Toolkit over React Context for a high-frequency live dashboard or data-grid.",
+      ],
+      1: [
+        "Variation Angle 1 (Core Web Vitals - LCP & CLS): An e-commerce product detail page has an LCP of 4.5s and CLS of 0.38 caused by unoptimized hero images, web font swapping, and dynamically injected recommendations. Walk through your profiling, layout stabilization, and resource hint remediation steps.",
+        "Variation Angle 2 (Virtual DOM & List Virtualization): Rendering a searchable table with 10,000 items freezes typing input. How do you implement windowing/virtualization (e.g. react-window) and use useDeferredValue or useTransition to keep the UI responsive?",
+        "Variation Angle 3 (Code Splitting & Bundle Hygiene): Profiling a 4MB vendor bundle and implementing route-based code splitting, dynamic imports, and tree-shaking to cut initial bundle size under 200KB.",
+      ],
+      2: [
+        "Variation Angle 1 (Optimistic UI with Rollback): Designing drag-and-drop kanban card reordering that updates the UI immediately with graceful rollback and error notification if the backend mutation fails.",
+        "Variation Angle 2 (Cache Invalidation with React Query / SWR): Setting up fine-grained query invalidation and optimistic updates when creating or deleting child items across multiple active views.",
+        "Variation Angle 3 (Offline Sync & PWA): Architecting client-side offline form persistence with IndexedDB and background sync when mobile network drops.",
+      ],
+      3: [
+        "Variation Angle 1 (Fluid Responsive Layout with CSS Grid): Implementing a responsive dashboard grid layout using CSS Grid auto-fit/minmax and subgrid that adapts seamlessly from mobile to 4K displays without JavaScript resize listeners.",
+        "Variation Angle 2 (WCAG 2.1 AA Accessible Modal Dialog): Constructing a fully accessible modal dialog with focus trapping, ARIA roles (role='dialog', aria-modal='true'), and keyboard escape navigation.",
+        "Variation Angle 3 (Responsive Typography & Viewport Height): Handling modern viewport units (100dvh vs 100vh) and sticky positioning issues across mobile iOS Safari and Android Chrome.",
+      ],
+      4: [
+        "Variation Angle 1 (DOM-based XSS Prevention & CSP): Sanitizing user-submitted markdown and HTML rich-text input to prevent script injection, and configuring strict Content Security Policy (CSP) headers.",
+        "Variation Angle 2 (SSR Hydration Mismatch): Diagnosing and fixing hydration mismatches in Next.js caused by browser-only global variables (window, localStorage) or client-side date formatting.",
+        "Variation Angle 3 (Modern Build Pipelines): Migrating an enterprise web app from legacy Webpack to Vite or Turbopack while setting up bundle analyzer size budgets in CI.",
+      ],
+    };
+    const angles = frontendGuidelines[pillarIndex] || frontendGuidelines[0];
+    return `
+SCENARIO DIVERSIFICATION DIRECTIVE (FRONTEND ENGINEERING FOCUS):
+To guarantee rigorous frontend evaluation, explore an authentic client-side engineering scenario:
+- ${angles.join("\n- ")}
+- Ensure the question tests ${pillarName || "the active frontend pillar"} with concrete frontend code concepts, browser mechanics, state design, or web performance.
+- STRICT RULE: NEVER ask backend distributed systems, database sharding, or message broker queue questions. Keep the focus 100% on Frontend Engineering.
+`.trim();
+  }
 
   // 1. FINANCE DOMAIN GUIDELINES
   if (normDomain.includes("finance")) {
@@ -526,7 +637,8 @@ export function getScenarioDiversificationGuidelines(
 SCENARIO DIVERSIFICATION DIRECTIVE (STRICT FINANCE DOMAIN FOCUS):
 To guarantee deep financial assessment across candidate sessions, explore an alternative concrete financial scenario angle:
 â€¢ ${angles.join("\nâ€¢ ")}
-- Ensure the question tests ${pillarName || "the active financial pillar"} under ${diff} expectations with concrete numbers, valuation tradeoffs, or financial statements mechanics.
+- Frame the question conversationally as an experienced finance leader in a live 1-on-1 interview, focusing on financial intuition, valuation tradeoffs, and practical financial statement mechanics.
+- AVOID ARBITRARY MATH RIDDLES: Do not invent complicated multi-variable mental arithmetic with arbitrary percentages or dollar amounts. Test how the candidate thinks and reasons.
 - STRICT RULE: NEVER ask software architecture, coding, or database questions. Keep the focus entirely on finance.
 `.trim();
   }
@@ -734,9 +846,102 @@ export function getDiverseFallbackQuestion(
   pillarIndex: number,
   pillarName?: string,
   domain?: string | null,
-  archetype?: ScenarioArchetype
+  archetype?: ScenarioArchetype,
+  type?: string,
+  focusArea?: string | null
 ): string {
   const normDomain = (domain || "").toLowerCase().trim();
+  const normFocus = (focusArea || "").toLowerCase().trim();
+  const roundType = (type || "").toUpperCase();
+
+  // 0A. MANAGERIAL LEADERSHIP FALLBACK QUESTIONS
+  if (roundType === "MANAGERIAL") {
+    const managerialFallbacks: Record<number, string[]> = {
+      0: [
+        "Suppose your team is under heavy pressure from executive leadership to ship a new feature by end of quarter, but your tech lead warns that technical debt in the core engine is creating severe production risks. How do you balance feature velocity with architectural health, and how do you negotiate that tradeoff with product stakeholders?",
+        "When planning quarterly engineering allocations, what framework or rubric do you use to divide engineering capacity between new product features, tech debt remediation, and developer productivity tooling?",
+        "Walk me through a time you made the tough call to delay a feature release to address foundational scalability or stability issues. How did you justify that decision to non-technical leadership?",
+      ],
+      1: [
+        "Imagine a senior engineer on your team who has historically been a strong performer begins missing commitments, becomes defensive during code reviews, and disengages in team meetings. Walk me through how you would approach this situation in your 1-on-1s and what coaching steps you would take.",
+        "How do you distinguish between an engineer struggling due to unclear expectations or burnout versus genuine sustained underperformance that warrants a formal Performance Improvement Plan (PIP)?",
+        "How do you handle career development and promotion conversations with an engineer who believes they are ready for a Staff promotion, but whose organizational scope and leadership behaviors are not yet at that bar?",
+      ],
+      2: [
+        "Suppose your product manager proposes a major pivot to the customer onboarding flow that adds significant architectural complexity on an aggressive timeline without consulting engineering first. How do you handle that disagreement constructively to reach an aligned solution?",
+        "How do you handle a situation where executive leadership demands an exact delivery date for a complex initiative before your engineering team has had time to conduct technical discovery or spike the problem?",
+        "Walk me through how you build high-trust relationships with Product and Design leaders, and how you ensure engineers have enough business context to make autonomous product decisions.",
+      ],
+      3: [
+        "If you are leading an engineering group growing from 10 to 30 engineers over the next year, how would you think about team topologies, squad boundaries, and ownership to prevent communication bottlenecks and knowledge silos?",
+        "How do you design an engineering interview rubric and hiring process that consistently identifies strong talent, evaluates culture add, and minimizes hiring bias across your interviewing team?",
+        "What strategies and onboarding frameworks do you put in place to ensure new engineering hires ramp up quickly, feel supported, and ship their first production pull request within their first week?",
+      ],
+    };
+    const pool = managerialFallbacks[pillarIndex] || managerialFallbacks[0];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // 0B. HR / BEHAVIORAL FALLBACK QUESTIONS
+  if (roundType === "HR") {
+    const hrFallbacks: Record<number, string[]> = {
+      0: [
+        "Tell me about a time you had a strong disagreement with a coworker or lead about the direction of a project. How did you articulate your perspective, listen to theirs, and reach an aligned path forward?",
+        "Describe a situation where you had to work closely with a difficult stakeholder or team member whose communication style clashed with yours. How did you manage that relationship?",
+        "Walk me through a time when a project team was experiencing tension or misalignment. What role did you play in de-escalating the friction?",
+      ],
+      1: [
+        "Tell me about a time a project you were responsible for missed its deadline or fell short of expectations. How did you communicate with stakeholders, and what did you do to turn things around?",
+        "Describe a situation where you had to make a tough trade-off between project quality, scope, and delivery speed under a tight deadline. How did you decide what to sacrifice?",
+        "Walk me through a time you identified a major risk or flaw in a project plan that others had overlooked. How did you bring it to light and take ownership of the solution?",
+      ],
+      2: [
+        "What is the most critical or difficult constructive feedback you have received in your career? How did you initially react, and what concrete steps did you take in response?",
+        "Tell me about a time you mentored or supported a struggling teammate. How did you tailor your support to help them succeed?",
+        "Describe a situation where you felt your work or suggestions were unfairly criticized. How did you handle that feedback professionally?",
+      ],
+      3: [
+        "Tell me about a time when company priorities shifted unexpectedly and you had to pivot away from a project you had invested significant effort into. How did you manage the transition?",
+        "Describe a situation where you were tasked with solving a problem in an unfamiliar technical domain or business area with minimal guidance. How did you ramp up and deliver?",
+        "What keeps you energized and motivated in your daily work, and how do you maintain momentum during prolonged or challenging projects?",
+      ],
+    };
+    const pool = hrFallbacks[pillarIndex] || hrFallbacks[0];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // 0C. FRONTEND FALLBACK QUESTIONS
+  if (normFocus.includes("front") || normDomain.includes("front")) {
+    const frontendFallbacks: Record<number, string[]> = {
+      0: [
+        "In a complex React application, how do you decide whether state belongs in local component state, a global store (like Zustand or Redux), React Context, or URL search parameters?",
+        "Suppose a user types into a search input that updates a shared filter context, causing an entire dashboard of 40 charts to re-render and stutter. How would you isolate component re-renders and optimize input responsiveness?",
+        "When building a multi-step checkout workflow with draft auto-saving and validation, how do you architect your state boundaries and custom hooks to keep logic decoupled from UI components?",
+      ],
+      1: [
+        "Suppose an e-commerce product page has an LCP (Largest Contentful Paint) of 4.2 seconds and a CLS (Cumulative Layout Shift) of 0.35. Walk me through your step-by-step audit using Chrome DevTools and your remediation strategy.",
+        "When rendering a real-time data table with 10,000 rows, continuous updates cause severe frame drops and UI jank. How do you implement DOM virtualization (windowing), and when would you leverage React 18's useTransition or useDeferredValue?",
+        "How do you configure dynamic imports, route-based code-splitting, and asset preloading to prevent a single monolithic JavaScript bundle from degrading time-to-interactive on mobile devices?",
+      ],
+      2: [
+        "How do you implement optimistic UI updates using React Query (or SWR) so that mutations feel instant, while still guaranteeing clean rollback and error notifications if the server rejects the request?",
+        "Suppose a user opens multiple browser tabs of your web app simultaneously. How do you manage cache invalidation, polling, and synchronization across tabs without overwhelming your backend API?",
+        "Explain how stale-while-revalidate caching works on the client, and how you handle race conditions when successive search queries return out of order.",
+      ],
+      3: [
+        "How do you build a fully accessible modal dialog from scratch adhering to WCAG 2.1 AA standards, specifically handling focus trapping, Esc key dismissal, and returning focus to the trigger element?",
+        "When architecting a design system, how do you decide between CSS Grid and Flexbox for responsive multi-column layouts, and how do you ensure contrast ratios and keyboard navigation support across assistive technologies?",
+        "How do you use ARIA live regions (aria-live='polite' vs 'assertive') to announce dynamic screen reader updates without interrupting active speech or overwhelming assistive devices?",
+      ],
+      4: [
+        "Walk me through how you prevent Cross-Site Scripting (XSS) when rendering user-submitted HTML or markdown in a single-page application, and how Content Security Policy (CSP) headers provide a second line of defense.",
+        "In Next.js or React Server Components (RSC), how do you resolve hydration mismatch errors, and how do you architect boundaries between Server Components and Client Components?",
+        "How do you securely handle authentication tokens (JWTs) in a modern web app: comparing HttpOnly Secure SameSite cookies against browser memory and local storage?",
+      ],
+    };
+    const pool = frontendFallbacks[pillarIndex] || frontendFallbacks[0];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
 
   // 1. FINANCE FALLBACK QUESTIONS
   if (normDomain.includes("finance")) {

@@ -24,6 +24,7 @@ import {
   DecisionReasonCode,
   InterviewOrchestrator,
   getPillarsForRound,
+  isCandidateTrackClarification,
 } from "@/services/interview-engine";
 
 // Re-export state & engine interfaces and helpers for full backward compatibility
@@ -31,6 +32,7 @@ export {
   SESSION_END_TOKEN,
   isCandidateRequestingToEnd,
   isGibberish,
+  isCandidateTrackClarification,
   classifyCandidateMessage,
   calculateConsecutiveNonSubstantiveCount,
   buildInterviewState,
@@ -64,13 +66,50 @@ export interface BuildPromptParams {
 }
 
 /**
- * Returns tailored depth and technical rigor guidelines matching the active difficulty tier and mastery
+ * Returns tailored depth and technical rigor guidelines matching the active difficulty tier, mastery, and track
  */
 export function getDifficultyDepthInstruction(
   difficulty: string,
-  masteryLevel?: string
+  masteryLevel?: string,
+  type?: string
 ): string {
   const norm = (difficulty || "MID").toUpperCase();
+  const roundType = (type || "DOMAIN").toUpperCase();
+
+  if (roundType === "MANAGERIAL") {
+    switch (norm) {
+      case "JUNIOR":
+      case "MID":
+      case "INTERMEDIATE":
+        return "Assess foundational engineering management: 1-on-1 coaching, sprint prioritization tradeoffs, coaching underperforming engineers, managing tech debt vs feature velocity, and cross-functional communication with product managers. NEVER quiz on programming syntax, data structures, or code mechanics, and NEVER frame the candidate as a junior developer.";
+      case "SENIOR":
+      case "LEAD":
+        return "Assess engineering leadership and org health: squad topologies, multi-team roadmap alignment, hiring calibration, managing burnout, and pushing back against unrealistic executive deadlines. NEVER quiz on programming syntax or frame the candidate as a junior.";
+      case "PRINCIPAL":
+      case "DIRECTOR":
+        return "Assess executive leadership: multi-team governance, engineering culture, long-term technical vision vs business P&L, executive stakeholder alignment, and organizational scaling.";
+      default:
+        return "Assess real-world engineering management dilemmas, people coaching, tech debt tradeoffs, and stakeholder alignment. Never quiz on programming syntax.";
+    }
+  }
+
+  if (roundType === "HR") {
+    switch (norm) {
+      case "JUNIOR":
+        return "Assess behavioral foundational teamwork: active listening, receiving feedback, taking ownership of tasks, collaboration with peers, and asking for help effectively. NEVER ask technical coding or syntax questions.";
+      case "MID":
+      case "INTERMEDIATE":
+        return "Assess behavioral maturity: cross-team collaboration, resolving interpersonal conflict, navigating ambiguous requirements, and learning from project setbacks.";
+      case "SENIOR":
+      case "LEAD":
+      case "PRINCIPAL":
+        return "Assess behavioral leadership: cultivating psychological safety, resolving high-friction stakeholder disagreements, mentoring struggling teammates, and modeling company values under high pressure.";
+      default:
+        return "Assess behavioral STAR competencies: collaboration, conflict resolution, ownership, and adaptability.";
+    }
+  }
+
+  // Domain / Technical tracks
   switch (norm) {
     case "JUNIOR":
       return "Verify fundamental syntax, component roles, and core algorithmic/domain basics with patient guidance.";
@@ -99,9 +138,10 @@ export function buildAdaptivePromptContext(
 
   const mastery = state.masteryState;
   const currentDiff = state.difficulty || "MID";
+  const roundType = state.type || "DOMAIN";
 
   if (!mastery || !mastery.pillars || Object.keys(mastery.pillars).length === 0) {
-    const defaultInstruction = getDifficultyDepthInstruction(currentDiff);
+    const defaultInstruction = getDifficultyDepthInstruction(currentDiff, undefined, roundType);
     return `\nADAPTIVE ASSESSMENT CONTEXT:
 • Target Difficulty Tier: ${currentDiff}
 • Adaptive Depth Guideline: ${defaultInstruction}\n`;
@@ -113,7 +153,7 @@ export function buildAdaptivePromptContext(
     Object.values(mastery.pillars)[Object.values(mastery.pillars).length - 1];
 
   if (!pillarMastery || pillarMastery.totalSubstantiveTurns === 0) {
-    const defaultInstruction = getDifficultyDepthInstruction(currentDiff);
+    const defaultInstruction = getDifficultyDepthInstruction(currentDiff, undefined, roundType);
     return `\nADAPTIVE ASSESSMENT CONTEXT:
 • Target Difficulty Tier: ${currentDiff}
 • Adaptive Depth Guideline: ${defaultInstruction}\n`;
@@ -121,7 +161,7 @@ export function buildAdaptivePromptContext(
 
   const topDemonstrated = (pillarMastery.demonstratedConcepts || []).slice(-3);
   const topGaps = (pillarMastery.identifiedGaps || []).slice(-2);
-  const depthInstruction = getDifficultyDepthInstruction(currentDiff, pillarMastery.masteryLevel);
+  const depthInstruction = getDifficultyDepthInstruction(currentDiff, pillarMastery.masteryLevel, roundType);
 
   const lines = [
     `\nADAPTIVE ASSESSMENT CONTEXT:`,
@@ -145,11 +185,11 @@ export function buildSystemPrompt(params: BuildPromptParams): string {
   const focusArea = params.state ? params.state.focusArea : params.focusArea;
   const difficulty = params.state?.difficulty || params.difficulty || "INTERMEDIATE";
 
-  const persona = getPersonaForInterview(type, difficulty, domain);
+  const persona = getPersonaForInterview(type, difficulty, domain, focusArea);
   const domainLabel = domain ? getDomainLabel(domain) : "Engineering";
   const focus = focusArea ? `with a specialized focus on "${focusArea}"` : "";
 
-  const roundPillars = getPillarsForRound(type, domain);
+  const roundPillars = getPillarsForRound(type, domain, focusArea);
   const pillarListText = roundPillars
     .map((p, idx) => `  - Pillar ${idx + 1}: ${p.name} (${p.description})`)
     .join("\n");
@@ -213,21 +253,37 @@ export function buildSystemPrompt(params: BuildPromptParams): string {
   }
 
   if (params.decision) {
-    const kw = params.decision.groundingKeywords && params.decision.groundingKeywords.length > 0
-      ? `\n- Target concepts to probe: ${params.decision.groundingKeywords.join(", ")}`
-      : "";
-    liveDirectiveSection = `⚡ ORCHESTRATOR DIRECTIVE [Action: ${params.decision.action} | Reason: ${params.decision.reasonCode} | Target Pillar: ${params.decision.targetPillarName}]:\n- ${params.decision.directiveInstruction}${kw}`;
+    if (params.decision.action === "CONCLUDE_ROUND") {
+      liveDirectiveSection = `🚨 LIVE TURN DIRECTIVE: CANDIDATE CONCLUDING SESSION
+- The candidate explicitly requested to end or wrap up the interview, or said goodbye.
+- Warmly thank them for their time and technical conversation in 1-2 polite sentences (e.g. "Thanks so much for taking the time to speak with me today! It was great chatting with you, and best of luck with your next steps.").
+- MANDATORY: You MUST append ${SESSION_END_TOKEN} at the very end of your response.
+- ABSOLUTE PROHIBITION: DO NOT ask any questions, scenarios, or follow-ups under any circumstances. The interview is completely finished.`;
+    } else {
+      const kw = params.decision.groundingKeywords && params.decision.groundingKeywords.length > 0
+        ? `\n- Target concepts to probe: ${params.decision.groundingKeywords.join(", ")}`
+        : "";
+      liveDirectiveSection = `⚡ ORCHESTRATOR DIRECTIVE [Action: ${params.decision.action} | Reason: ${params.decision.reasonCode} | Target Pillar: ${params.decision.targetPillarName}]:\n- ${params.decision.directiveInstruction}${kw}`;
+    }
   }
 
-  // Phase 6: Scenario Diversification Guidance
+  // Phase 6: Scenario Diversification Guidance - ONLY when generating a fresh scenario question for a pillar
   let scenarioDiversificationSection = "";
-  if (params.decision && params.decision.action !== "CONCLUDE_ROUND" && params.decision.action !== "HANDLE_GREETING") {
-    const targetPillarIndex = params.decision.targetPillarIndex ?? 0;
+  const shouldDiversifyScenario =
+    params.decision &&
+    (params.decision.action === "ADVANCE_PILLAR" ||
+      params.decision.action === "PIVOT_AWAY" ||
+      (params.decision.action === "OPEN_INTERVIEW" && !params.isIntroTurn));
+
+  if (shouldDiversifyScenario) {
+    const targetPillarIndex = params.decision?.targetPillarIndex ?? 0;
     scenarioDiversificationSection = `\n${getScenarioDiversificationGuidelines(
       targetPillarIndex,
-      params.decision.targetPillarName,
+      params.decision!.targetPillarName,
       domain,
-      difficulty
+      difficulty,
+      type,
+      focusArea
     )}\n`;
   }
 
@@ -239,22 +295,40 @@ ${candidateMemorySection}${topicsCoveredSection}${previousQuestionsSection}${ada
 ${liveDirectiveSection}
 
 CORE BEHAVIOR RULES (apply to every response, no exceptions):
-1. NEVER FAKE VALIDATION: If input is gibberish ("skhfg ds"), 1-word filler ("yes", "ok", "fine", "sure", "got it"), or evasive ("idk", "skip"), NEVER affirm or validate it. Never start non-answers with affirmative openers ("Got it", "Understood", "Makes sense").
-2. BAN AI CLICHÉS & REPETITIVE STOCK OPENERS: NEVER start turns with repetitive stock phrases like "Understood.", "Got it.", "Makes sense.", "I'm excited to chat", "I'm thrilled to", "Let's dive in", "I'm looking forward to this conversation", "Great question", "That's fantastic", "It's a pleasure to". Vary opening transitions naturally or jump straight into the technical discussion.
-3. ZERO QUESTION REPETITION & SCENARIO DIVERSITY: Never repeat a question, scenario, or inquiry that was already asked in this session or in past sessions. Track previously asked questions and always move forward to fresh scenario angles, component trade-offs, or different pillars.
-4. CANDIDATE META-INSTRUCTIONS & TOPIC REQUESTS: If the candidate directly asks the interviewer to ask a specific question, prompt them in a specific way, or cover a particular topic (e.g. "ask me how are you", "ask me a question about Kafka", "test my React knowledge"), DO NOT answer the question yourself or speak on the candidate's behalf (e.g. never say "I am doing well, how about you?" or explain Kafka yourself). Instead, execute their request by directly asking them that question (e.g. "How are you doing today?", "Let's talk about Kafka — how do you handle partition rebalancing?"). Always keep the candidate in the hot seat.
-5. CONCLUDING TOKEN: When wrapping up the interview (whether due to candidate request or having covered all pillars), give a brief, polite 1-sentence closing thank you and ALWAYS append ${SESSION_END_TOKEN} at the very end. DO NOT include ${SESSION_END_TOKEN} if you are continuing the conversation with further questions.
-6. CONSECUTIVE NON-ANSWERS & PIVOT VARIETY: After 2-3 non-answers, stop looping. Gracefully release and pivot to a new topic pillar. NEVER use the same transition bridge twice in a row — vary between different conversational exits.
-7. ANCHOR TO SPECIFICS: For substantive answers, pull out an actual word, number, tool, or tradeoff. If vague, ask for specifics — never invent enthusiasm.
-8. VARIETY: Never repeat the same opener or pivot phrase twice. Vary naturally ("Hm — ", jumping straight into the thought, short pause, etc.).
-9. CONVERSATIONAL & CONCISE: 2-4 sentences max (under 60 words). Use contractions ("I'd", "let's"). No bullet lists, markdown headers, bold intro titles, or monologues. Never grade out loud.
-10. CLARIFICATIONS: Answer candidate questions directly and knowledgeably in 1-2 sentences, then resume the interview.
-11. GREETINGS: Brief warm greeting, then continue SAME question.
-12. FALLBACK VARIETY: Track asked topics and choose distinct questions when redirecting — never repeat the same fallback question.
-13. TOPIC BREADTH: Pivot to a new pillar after 2-3 substantive turns:
+1. ACT LIKE A REAL, CONVERSATIONAL HUMAN INTERVIEWER: You are an experienced senior professional conducting a genuine 1-on-1 interview. Speak naturally, professionally, and collegially. NEVER sound like an automated exam proctor, quiz engine, or textbook question generator.
+- NEVER announce section titles, slide labels, or colons before questions (e.g. NEVER say "Let's shift to valuation mechanics:", "Pillar 1: System Architecture:", "Next question:"). Jump straight into the conversation naturally.
+- DO NOT cram multiple complex percentages, arbitrary dollar amounts, or multi-part math riddles into one question. Ask realistic, conversational questions focused on business intuition, mechanism design, and practical tradeoffs.
+- Ask ONE clear, focused question per turn. Never bombard the candidate with multiple questions at once.
+2. RESPECT FAREWELLS & CONCLUDE IMMEDIATELY: If the candidate says "bye", "byee", "goodbye", "I have to leave", "can we wrap up", "I'm done", "gotta go", or signals they want to end, IMMEDIATELY honor their request.
+- Warmly thank them for their time in 1-2 polite sentences (e.g. "Thanks so much for your time today! It was great speaking with you, and best of luck with your next steps. ${SESSION_END_TOKEN}").
+- ABSOLUTELY NEVER ask another question, follow-up, or scenario after the candidate says goodbye or asks to end.
+3. BAN AI CLICHÉS & REPETITIVE STOCK OPENERS: NEVER start turns with repetitive stock phrases like "Understood.", "Got it.", "Makes sense.", "Fair point.", "Fair enough.", "Good point.", "Right.", "I'm excited to chat", "I'm thrilled to", "Let's dive in", "Great question", "That's fantastic".
+- NEVER use fake canned filler openers like "Hm — ", "Ah — ", "Well — ".
+- Vary transitions naturally or transition straight into the thought.
+4. SOCIAL AWARENESS, GIBBERISH & NON-SUBSTANTIVE HANDLING:
+- If the candidate enters gibberish, keyboard mash, or incomprehensible text (e.g. "fgdg", "f jcfh", random letters), explicitly and politely state that you didn't catch or understand what they meant (e.g. "Sorry, I didn't quite catch that. Could you clarify your answer, or walk me through your thoughts on the question?"). NEVER say "No problem — let's look at [new topic]" or pretend they answered.
+- If the candidate says "I don't know", "skip", or is stuck, be gracious like a real human (e.g. "Totally fine, no worries at all — let's look at it from another angle:", "No problem, we can move right along."). NEVER lecture, scold, or treat evasions as valid technical answers.
+- In candidate introduction turns: ONLY acknowledge their background if they actually shared experience or projects. If they only said hello/hey (e.g. "heyy") or asked a question, warmly greet them back and ask them to share their background. NEVER say "Got a quick sense of your recent work" if they didn't share any work.
+- After 2 non-answers, smoothly pivot to a different topic without lecturing or repeating formulas.
+5. CANDIDATE META-INSTRUCTIONS & TOPIC REQUESTS: If the candidate directly asks to be tested on a specific topic (e.g. "ask me about Kafka", "test my DCF modeling"), execute their request by asking them a focused question on that topic. Always keep the candidate in the hot seat.
+6. ANCHOR TO SPECIFICS: When the candidate gives a substantive answer, respond to what they actually said — pick out a specific concept, tool, or metric they mentioned and probe deeper or challenge trade-offs.
+7. CONVERSATIONAL & CONCISE: 2-3 sentences max (under 50 words). Use natural contractions ("I'd", "let's"). No bullet lists, markdown headers, or monologues. Never grade out loud.
+8. CLARIFICATIONS: Answer candidate questions directly and knowledgeably in 1-2 sentences, then resume the interview.
+9. GREETINGS: Brief warm greeting, then continue SAME question.
+10. FALLBACK VARIETY: Track asked topics and choose distinct questions when redirecting — never repeat the same fallback question.
+11. TOPIC BREADTH: Pivot to a new pillar after 2-3 substantive turns:
 ${pillarListText}
-14. STRICT DOMAIN FIDELITY: You are a real senior professional and interviewer in ${domainLabel}. Your questions, follow-ups, and scenarios MUST strictly assess ${domainLabel} concepts and trade-offs. NEVER ask software engineering, coding, database indexing, web development, or IT system questions if the domain is Finance, Accounting, Data Science, or another non-software field. If the candidate asks you to stick to ${domainLabel}, immediately honor their request and probe core ${domainLabel} topics.
-15. ZERO AI IDENTITY: You are a real senior professional and hiring manager in ${domainLabel}.
+12. STRICT TRACK & DOMAIN FIDELITY (MANDATORY):
+- ROUND TYPE: ${type}${focus ? ` (${focus})` : ""}
+- If focus area is FRONTEND: Questions and scenarios MUST strictly assess Frontend Engineering concepts (component composition, React state modeling, Core Web Vitals, re-render memoization, client caching, CSS Grid/Flexbox, accessibility WCAG, hydration, and client security). NEVER ask distributed systems, backend microservice decomposition, database sharding, or message broker queue questions.
+- If round type is MANAGERIAL: You are interviewing an experienced ENGINEERING LEADER (Engineering Manager, Director, VP, Lead). Every question MUST evaluate people management, tech debt vs delivery, stakeholder negotiation, team topology, hiring calibration, or organizational strategy.
+  * ABSOLUTE PROHIBITION ON SYNTAX & CODING: NEVER ask programming syntax questions, data structure trivia (e.g. slices vs arrays, memory allocation, pointers, language quirks), or write code.
+  * ABSOLUTE PROHIBITION ON JUNIOR FRAMING: NEVER frame the candidate as a junior developer, intern, or individual contributor (e.g. NEVER say "Imagine you're the first junior dev on a team"). The candidate is the LEADER / MANAGER. All scenarios MUST be framed from the perspective of an engineering leader.
+  * If the candidate asks why technical/coding questions were asked: Acknowledge and apologize immediately in 1 concise sentence, and pivot immediately to an authentic engineering leadership dilemma from the current pillar.
+- If round type is HR: The interview is strictly behavioral and cultural (STAR format). Assess collaboration, conflict resolution, project setbacks, and adaptability. NEVER ask coding or technical system design questions.
+- If domain is Finance, Accounting, Data Science, or another non-software field: NEVER ask software engineering, coding, database indexing, web development, or IT system questions.
+13. ZERO AI IDENTITY: You are a real senior professional and hiring manager in ${domainLabel}.
+14. ZERO TOLERANCE FOR VULGARITY & CONDUCT: If the candidate uses vulgar, profane, abusive, or obscene language (e.g. "fuck off", "fuck", swearing, or insults), the interview is terminated immediately then and there. Never validate it, never ignore it, and never ask further technical questions. State firmly in 1 sentence that the interview is terminated due to unprofessional conduct, and you MUST append ${SESSION_END_TOKEN} at the very end.
 `.trim();
 }
 
@@ -264,7 +338,7 @@ export function buildOpeningPrompt(params: BuildPromptParams): string {
   const focusArea = params.state ? params.state.focusArea : params.focusArea;
   const difficulty = params.state?.difficulty || params.difficulty || "INTERMEDIATE";
 
-  const persona = getPersonaForInterview(type, difficulty, domain);
+  const persona = getPersonaForInterview(type, difficulty, domain, focusArea);
   const domainLabel = domain ? getDomainLabel(domain) : "Engineering";
   const focus = focusArea ? ` with a focus on ${focusArea}` : "";
   const trackName =

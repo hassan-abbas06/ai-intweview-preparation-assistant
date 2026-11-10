@@ -5,8 +5,10 @@ import {
   classifyCandidateMessage,
   isCandidateRequestingToEnd,
 } from "@/lib/interview/state";
+import { containsVulgarOrInappropriateLanguage } from "@/lib/interview/moderation";
 import {
   isCandidateClarification,
+  isCandidateTrackClarification,
   isCandidateMetaInstruction,
   TECHNICAL_PILLARS,
   HR_PILLARS,
@@ -146,9 +148,12 @@ export class InterviewEvaluator {
     state?: InterviewState
   ): boolean {
     if (!candidateMessage || !candidateMessage.trim()) return true;
+    if (containsVulgarOrInappropriateLanguage(candidateMessage)) return true;
+    if (state?.isCandidateVulgar) return true;
     if (state?.isCandidateEnding || isCandidateRequestingToEnd(candidateMessage)) return true;
     if (state?.isGreeting || classifyCandidateMessage(candidateMessage) === "GREETING") return true;
     if (isCandidateClarification(candidateMessage)) return true;
+    if (isCandidateTrackClarification(candidateMessage)) return true;
     if (isCandidateMetaInstruction(candidateMessage)) return true;
     if (classifyCandidateMessage(candidateMessage) === "NON_SUBSTANTIVE") return true;
     return false;

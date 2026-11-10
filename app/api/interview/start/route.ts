@@ -14,6 +14,7 @@ const StartInterviewSchema = z.object({
   focusArea: z.string().max(300).optional().nullable(),
   difficulty: z.enum(["JUNIOR", "INTERMEDIATE", "SENIOR", "LEAD"]).default("INTERMEDIATE"),
   modality: z.enum(["TEXT", "VOICE"]).default("TEXT"),
+  jobDescriptionId: z.string().optional().nullable(),
 });
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { type, domain, focusArea, difficulty, modality } = validation.data;
+    const { type, domain, focusArea, difficulty, modality, jobDescriptionId } = validation.data;
 
     // Retrieve database user
     let user = session.user.id
@@ -52,6 +53,24 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return errorResponse("Candidate account not found.", 404);
+    }
+
+    // Verify jobDescriptionId if provided
+    let validJobDescriptionId: string | null = null;
+    if (jobDescriptionId && jobDescriptionId.trim()) {
+      const jd = await prisma.jobDescription.findFirst({
+        where: {
+          id: jobDescriptionId.trim(),
+          userId: user.id,
+        },
+        select: { id: true },
+      });
+
+      if (!jd) {
+        return errorResponse("Job description not found.", 404);
+      }
+
+      validJobDescriptionId = jd.id;
     }
 
     // Determine target career track
@@ -93,6 +112,7 @@ export async function POST(req: NextRequest) {
           focusArea: questionIdsCsv,
           difficulty,
           modality: modality as InterviewModality,
+          ...(validJobDescriptionId ? { jobDescriptionId: validJobDescriptionId } : {}),
         },
       });
 
@@ -133,6 +153,7 @@ export async function POST(req: NextRequest) {
         focusArea: focusArea || null,
         difficulty,
         modality: modality as InterviewModality,
+        ...(validJobDescriptionId ? { jobDescriptionId: validJobDescriptionId } : {}),
       },
     });
 

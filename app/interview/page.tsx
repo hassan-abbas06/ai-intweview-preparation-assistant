@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { JDConfirmationCard } from "@/components/interview/jd-confirmation-card";
 import { DOMAIN_OPTIONS, SOFTWARE_ENGINEERING_SUBFOCUS } from "@/lib/constants/domains";
 import {
   Briefcase,
@@ -22,6 +23,9 @@ import {
   CheckCircle2,
   Mic,
   MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  FileText,
 } from "lucide-react";
 
 interface TrackCardOption {
@@ -98,6 +102,47 @@ export default function InterviewHubPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Job Description state
+  const [jdRawText, setJdRawText] = useState<string>("");
+  const [isJdExpanded, setIsJdExpanded] = useState<boolean>(false);
+  const [isAnalyzingJd, setIsAnalyzingJd] = useState<boolean>(false);
+  const [jdError, setJdError] = useState<string | null>(null);
+  const [extractedJd, setExtractedJd] = useState<{
+    jobDescriptionId: string;
+    role: string | null;
+    seniority: string | null;
+    skills: string[];
+    responsibilities: string[];
+    confidence: "ok" | "low" | string;
+  } | null>(null);
+
+  // Recent JD from resume scan
+  const [recentJd, setRecentJd] = useState<{
+    source: "existing" | "scan";
+    scannedAt: string;
+    jobDescriptionId?: string;
+    role?: string | null;
+    seniority?: string | null;
+    skills?: string[];
+    responsibilities?: string[];
+    confidence?: string;
+    jdText?: string;
+  } | null>(null);
+
+  // Fetch recent resume scan JD on load (silent if none/error)
+  useEffect(() => {
+    fetch("/api/interview/recent-jd")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (json && !json.error && json.data) {
+          setRecentJd(json.data);
+        }
+      })
+      .catch(() => {
+        // Silently ignore
+      });
+  }, []);
+
   // Sync domain preference from session
   useEffect(() => {
     if (session?.user?.domain) {
@@ -133,7 +178,68 @@ export default function InterviewHubPage() {
     }
   };
 
-  const handleStartInterview = async () => {
+  const handleAnalyzeJD = async (overrideText?: string) => {
+    const raw = typeof overrideText === "string" ? overrideText : jdRawText;
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setJdError("Please paste a job description first.");
+      return;
+    }
+
+    if (trimmed.length > 20000) {
+      setJdError("Job description exceeds 20,000 characters limit.");
+      return;
+    }
+
+    setJdError(null);
+    setIsAnalyzingJd(true);
+
+    try {
+      const res = await fetch("/api/interview/generate-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawText: trimmed }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setJdError(json.message || "Failed to analyze job description.");
+        setIsAnalyzingJd(false);
+        return;
+      }
+
+      setExtractedJd(json.data);
+    } catch {
+      setJdError("Network or server error while analyzing job description.");
+    } finally {
+      setIsAnalyzingJd(false);
+    }
+  };
+
+  const handleUseRecentJd = () => {
+    if (!recentJd) return;
+    setIsJdExpanded(true);
+    setJdError(null);
+
+    if (recentJd.source === "existing" && recentJd.jobDescriptionId) {
+      // Immediately populate card without calling extraction LLM
+      setExtractedJd({
+        jobDescriptionId: recentJd.jobDescriptionId,
+        role: recentJd.role ?? null,
+        seniority: recentJd.seniority ?? null,
+        skills: recentJd.skills || [],
+        responsibilities: recentJd.responsibilities || [],
+        confidence: recentJd.confidence || "ok",
+      });
+    } else if (recentJd.source === "scan" && recentJd.jdText) {
+      // Put through the analyze JD flow (creates the row and displays card)
+      setJdRawText(recentJd.jdText);
+      handleAnalyzeJD(recentJd.jdText);
+    }
+  };
+
+  const handleStartInterview = async (explicitJobDescriptionId?: string | null) => {
+    if (loading) return;
     setError(null);
     setLoading(true);
 
@@ -142,6 +248,13 @@ export default function InterviewHubPage() {
         selectedTrack === "DOMAIN" && selectedDomain === "Software_Engineering"
           ? [softwareSubFocus, focusArea.trim()].filter(Boolean).join(" - ")
           : focusArea.trim() || null;
+
+      const effectiveJdId =
+        selectedTrack !== "APTITUDE"
+          ? explicitJobDescriptionId !== undefined
+            ? explicitJobDescriptionId
+            : extractedJd?.jobDescriptionId || null
+          : null;
 
       const res = await fetch("/api/interview/start", {
         method: "POST",
@@ -152,6 +265,7 @@ export default function InterviewHubPage() {
           focusArea: selectedTrack === "DOMAIN" ? combinedFocus : null,
           difficulty,
           modality,
+          ...(effectiveJdId ? { jobDescriptionId: effectiveJdId } : {}),
         }),
       });
 
@@ -408,6 +522,175 @@ export default function InterviewHubPage() {
                 </p>
               </div>
             )}
+
+            {/* Optional Job Description Section (Hidden for APTITUDE) */}
+            {selectedTrack !== "APTITUDE" && (
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setIsJdExpanded((prev) => !prev)}
+                  className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-700 transition-all text-left"
+                  aria-expanded={isJdExpanded}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                        Paste a job description <span className="font-normal text-slate-400">(Optional)</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400 block">
+                        Tailor interview scenarios to required skills and tech stack
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {recentJd && !extractedJd && (
+                      <Badge variant="primary" className="text-[10px] hidden sm:inline-flex">
+                        Recent Scan JD Available
+                      </Badge>
+                    )}
+                    {extractedJd && (
+                      <Badge variant="success" className="text-[10px]">
+                        JD Ready
+                      </Badge>
+                    )}
+                    {isJdExpanded ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                </button>
+
+                {isJdExpanded && (
+                  <div className="space-y-3 pt-1">
+                    {/* Reuse JD from recent resume scan option */}
+                    {recentJd && !extractedJd && (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-900/40 text-xs">
+                        <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                          <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                          <span>
+                            Recent scan from{" "}
+                            <span className="font-semibold text-slate-900 dark:text-white">
+                              {new Date(recentJd.scannedAt).toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </span>{" "}
+                            includes a job description.
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleUseRecentJd}
+                          isLoading={isAnalyzingJd}
+                          loadingText="Analyzing..."
+                          disabled={isAnalyzingJd || loading}
+                          className="text-xs h-7 px-3 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-800 hover:bg-blue-100/60 dark:hover:bg-blue-900/60 shrink-0 font-medium"
+                        >
+                          Use the job description from your recent resume scan
+                        </Button>
+                      </div>
+                    )}
+                    <div className="relative">
+                      <textarea
+                        value={jdRawText}
+                        onChange={(e) => {
+                          setJdRawText(e.target.value);
+                          if (extractedJd) setExtractedJd(null);
+                          if (jdError) setJdError(null);
+                        }}
+                        disabled={isAnalyzingJd || loading}
+                        maxLength={20000}
+                        rows={4}
+                        placeholder="Paste raw job description text here (e.g. responsibilities, requirements, technical skills)..."
+                        className="w-full px-3.5 py-2.5 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/25 shadow-xs placeholder:text-slate-400 resize-y min-h-[95px] disabled:opacity-60"
+                      />
+                      <div className="flex justify-between items-center text-[10px] mt-1 px-1">
+                        <span className={jdRawText.length > 19000 ? "text-amber-500 font-semibold" : "text-slate-400"}>
+                          {jdRawText.trim().length === 0
+                            ? "Max 20,000 characters"
+                            : `${jdRawText.length.toLocaleString()} / 20,000 characters`}
+                        </span>
+                        {jdRawText.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setJdRawText("");
+                              setExtractedJd(null);
+                              setJdError(null);
+                            }}
+                            disabled={isAnalyzingJd || loading}
+                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 underline"
+                          >
+                            Clear text
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {jdError && (
+                      <div
+                        role="alert"
+                        className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                      >
+                        <span>{jdError}</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleStartInterview(null)}
+                          disabled={loading}
+                          className="text-xs h-7 px-2 shrink-0 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40"
+                        >
+                          Continue without JD
+                        </Button>
+                      </div>
+                    )}
+
+                    {!extractedJd && (
+                      <div className="flex items-center gap-2.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAnalyzeJD()}
+                          isLoading={isAnalyzingJd}
+                          loadingText="Analyzing Job Description..."
+                          disabled={!jdRawText.trim() || isAnalyzingJd || loading}
+                          className="text-xs"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 mr-1.5 text-blue-500" />
+                          Analyze job description
+                        </Button>
+                        {!jdRawText.trim() && (
+                          <span className="text-[11px] text-slate-400">
+                            Paste text above to analyze
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {extractedJd && (
+                      <JDConfirmationCard
+                        role={extractedJd.role}
+                        seniority={extractedJd.seniority}
+                        skills={extractedJd.skills}
+                        responsibilities={extractedJd.responsibilities}
+                        confidence={extractedJd.confidence}
+                        onContinue={() => handleStartInterview(extractedJd.jobDescriptionId)}
+                        onSkip={() => handleStartInterview(null)}
+                        isStarting={loading}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
 
           <CardFooter className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-100 dark:border-slate-700/60 pt-4">
@@ -417,9 +700,10 @@ export default function InterviewHubPage() {
             </div>
 
             <Button
-              onClick={handleStartInterview}
+              onClick={() => handleStartInterview(extractedJd?.jobDescriptionId || null)}
               isLoading={loading}
               loadingText="Initializing Room..."
+              disabled={loading || isAnalyzingJd}
               size="lg"
               className="w-full sm:w-auto flex items-center gap-2 shadow-sm shadow-blue-500/25 font-semibold px-7"
             >

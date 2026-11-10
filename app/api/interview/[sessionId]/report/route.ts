@@ -62,7 +62,7 @@ export async function GET(
     } else if (reportRecord.status === "WAITING_FOR_EVALUATIONS") {
       // Actively drain any pending/retrying jobs for this session so the user does not wait indefinitely
       try {
-        await EvaluationWorker.drainSession(sessionId, 5000);
+        await EvaluationWorker.drainSession(sessionId, 2000);
       } catch (err) {
         console.error(`[Report API] Drain error for session ${sessionId}:`, err);
       }

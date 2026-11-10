@@ -47,33 +47,28 @@ export async function POST(
       },
     });
 
-    // 2. Actively drain any remaining evaluation jobs for this session
-    try {
-      await EvaluationWorker.drainSession(sessionId, 8000);
-    } catch (drainErr) {
-      console.warn(`[End Session] Non-blocking worker drain error for ${sessionId}:`, drainErr);
-    }
-
-    // 3. Determine report state via persistence service
-    let reportStatus: string = "WAITING_FOR_EVALUATIONS";
-    try {
-      const report = await ReportPersistenceService.getOrGenerateReport(sessionId);
-      reportStatus = report.status;
-    } catch (reportErr) {
-      console.error(`[End Session] Error generating report for ${sessionId}:`, reportErr);
-      reportStatus = "WAITING_FOR_EVALUATIONS";
-    }
+    // 2. Trigger worker drain & report initialization non-blockingly in the background
+    // This allows the client to navigate to the report page in < 50ms rather than hanging for 15+ seconds.
+    setTimeout(() => {
+      EvaluationWorker.drainSession(sessionId, 8000)
+        .catch((drainErr) => console.warn(`[End Session] Background drain:`, drainErr))
+        .finally(() => {
+          ReportPersistenceService.getOrGenerateReport(sessionId).catch((reportErr) =>
+            console.error(`[End Session] Background report initialization:`, reportErr)
+          );
+        });
+    }, 10);
 
     const elapsedMs = Date.now() - t0;
     console.log(
-      `[API Timing: End Session] Completed session ${sessionId} (reportStatus: ${reportStatus}) in ${elapsedMs}ms`
+      `[API Timing: End Session] Completed session ${sessionId} in ${elapsedMs}ms. Returning immediate redirect.`
     );
 
     const reportUrl = `/interview/${sessionId}/report`;
     const responsePayload = {
       sessionId,
       sessionStatus: "COMPLETED",
-      reportStatus,
+      reportStatus: "PROCESSING",
       reportUrl,
       session: updated,
       timingMs: elapsedMs,
@@ -85,7 +80,7 @@ export async function POST(
         message: "Interview session has ended successfully.",
         sessionId,
         sessionStatus: "COMPLETED",
-        reportStatus,
+        reportStatus: "PROCESSING",
         reportUrl,
         data: responsePayload,
       },

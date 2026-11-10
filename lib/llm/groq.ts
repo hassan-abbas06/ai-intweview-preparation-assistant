@@ -8,9 +8,9 @@ import {
 } from "./types";
 
 const GROQ_MODELS = [
+  "qwen/qwen3.8-27b",
   "openai/gpt-oss-120b",
   "openai/gpt-oss-20b",
-  "qwen/qwen3.8-27b",
 ];
 
 const MODEL_TIMEOUT_MS = 8000; // 8s timeout per model attempt for fast failover to instant models

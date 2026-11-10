@@ -30,6 +30,7 @@ import {
   FileCheck,
   RefreshCw,
 } from "lucide-react";
+import { compressImageIfNeeded } from "@/lib/client/compress-image";
 
 interface ScanHistoryItem {
   scanId: string;
@@ -40,7 +41,7 @@ interface ScanHistoryItem {
   timestamp: string;
 }
 
-const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ACCEPTED_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -48,18 +49,24 @@ const ACCEPTED_TYPES = [
   "image/png",
   "image/webp",
   "image/heic",
+  "image/heif",
 ];
-const ACCEPTED_EXTENSIONS = ".pdf,.docx,.jpg,.jpeg,.png,.webp,.heic";
+const ACCEPTED_EXTENSIONS = ".pdf,.docx,.jpg,.jpeg,.png,.webp,.heic,.heif";
 
 function getErrorMessage(res: Response, json: any): string {
   if (json && typeof json.message === "string" && json.message.trim().length > 0) {
     return json.message.trim();
   }
+  if (json && typeof json.error === "string" && json.error.trim().length > 0) {
+    return json.error.trim();
+  }
   switch (res.status) {
     case 401:
       return "Please sign in.";
+    case 403:
+      return "Access denied.";
     case 413:
-      return "File is larger than 4 MB.";
+      return "File is larger than 10 MB.";
     case 422:
       return "We couldn't read this file.";
     case 429:
@@ -71,6 +78,86 @@ function getErrorMessage(res: Response, json: any): string {
   }
 }
 
+function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+  timeoutErrorMessage: string
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  return fetch(url, Object.assign({}, options, { signal: controller.signal }))
+    .then((res) => {
+      clearTimeout(timer);
+      return res;
+    })
+    .catch((err) => {
+      clearTimeout(timer);
+      if (err && err.name === "AbortError") {
+        throw new Error(timeoutErrorMessage);
+      }
+      throw err;
+    });
+}
+
+interface CloudinaryUploadResult {
+  ok: boolean;
+  status: number;
+  data: any;
+}
+
+function uploadToCloudinaryWithProgress(
+  url: string,
+  formData: FormData,
+  onProgress: (percent: number) => void,
+  timeoutMs: number,
+  timeoutErrorMessage: string
+): Promise<CloudinaryUploadResult> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.timeout = timeoutMs;
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) {
+        const percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+        onProgress(percent);
+      }
+    };
+
+    xhr.onload = () => {
+      let data: any = null;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        // Non-JSON response
+      }
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        data,
+      });
+    };
+
+    xhr.onerror = () => {
+      reject(new Error("Failed to upload document to storage provider. Check your connection."));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new Error(timeoutErrorMessage));
+    };
+
+    xhr.onabort = () => {
+      reject(new Error("Upload was cancelled."));
+    };
+
+    xhr.send(formData);
+  });
+}
+
 export default function ResumePage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -78,7 +165,10 @@ export default function ResumePage() {
   // Upload state
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [optimizing, setOptimizing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadStep, setUploadStep] = useState<string>("");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadedResumeId, setUploadedResumeId] = useState<string | null>(null);
   const [uploadWarning, setUploadWarning] = useState<string | null>(null);
 
@@ -116,7 +206,7 @@ export default function ResumePage() {
 
   const validateFile = (file: File): string | null => {
     if (file.size > MAX_FILE_SIZE) {
-      return "File exceeds 4MB limit. Please upload a smaller file.";
+      return "File exceeds 10MB limit. Please upload a smaller file.";
     }
     const ext = "." + (file.name.split(".").pop() || "").toLowerCase();
     const typeAllowed = ACCEPTED_TYPES.indexOf(file.type) !== -1;
@@ -127,9 +217,27 @@ export default function ResumePage() {
     return null;
   };
 
-  const handleFile = async (file: File) => {
+  const handleFile = async (rawFile: File) => {
+    if (uploading || optimizing) return;
+
     setErrorMessage(null);
     setUploadWarning(null);
+
+    let file = rawFile;
+    setOptimizing(true);
+    try {
+      file = await compressImageIfNeeded(rawFile, 10 * 1024 * 1024 - 1);
+    } catch (err: any) {
+      setErrorMessage(
+        err?.message ||
+          "This photo format can't be read in your browser. Please convert it to JPG or PNG and try again."
+      );
+      setOptimizing(false);
+      return;
+    } finally {
+      setOptimizing(false);
+    }
+
     const error = validateFile(file);
     if (error) {
       setErrorMessage(error);
@@ -138,32 +246,106 @@ export default function ResumePage() {
 
     setSelectedFile(file);
     setUploading(true);
+    setUploadStep("Preparing upload...");
+    setUploadProgress(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
+      // Step 1: Request signed upload authorization from server (20s timeout)
+      const signRes = await fetchWithTimeout(
+        "/api/resume/upload/sign",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
+        },
+        20000,
+        "Upload took too long. Check your connection and try again."
+      );
 
-      const res = await fetch("/api/resume/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      let data: any = null;
+      let signData: any = null;
       try {
-        data = await res.json();
+        signData = await signRes.json();
       } catch {
         // Non-JSON response
       }
 
-      if (!res.ok || (data && data.error)) {
-        const msg = getErrorMessage(res, data);
+      if (!signRes.ok || (signData && signData.error)) {
+        const msg = getErrorMessage(signRes, signData);
         setErrorMessage(msg);
         setSelectedFile(null);
         setUploadedResumeId(null);
         return;
       }
 
-      const uploadData = data?.data;
+      const { cloudName, apiKey, timestamp, signature, folder, type } = signData.data;
+
+      // Step 2: Direct browser-to-Cloudinary raw upload (120s timeout with progress)
+      setUploadStep("Uploading to storage...");
+      setUploadProgress(0);
+
+      const cloudinaryFormData = new FormData();
+      cloudinaryFormData.append("file", file);
+      cloudinaryFormData.append("api_key", apiKey);
+      cloudinaryFormData.append("timestamp", String(timestamp));
+      cloudinaryFormData.append("signature", signature);
+      cloudinaryFormData.append("folder", folder);
+      cloudinaryFormData.append("type", type);
+
+      const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/raw/upload`;
+      const cldResult = await uploadToCloudinaryWithProgress(
+        uploadUrl,
+        cloudinaryFormData,
+        (percent) => {
+          setUploadProgress(percent);
+        },
+        120000,
+        "Upload took too long. Check your connection and try again."
+      );
+
+      const cldData = cldResult.data;
+      if (!cldResult.ok || !cldData || !cldData.public_id) {
+        const cldError =
+          (cldData && cldData.error && cldData.error.message) ||
+          "Failed to upload document to storage provider.";
+        setErrorMessage(cldError);
+        setSelectedFile(null);
+        setUploadedResumeId(null);
+        return;
+      }
+
+      const publicId = cldData.public_id;
+
+      // Step 3: Complete upload and parse resume server-side (90s timeout)
+      setUploadStep("Reading your resume...");
+      setUploadProgress(null);
+
+      const completeRes = await fetchWithTimeout(
+        "/api/resume/upload/complete",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ publicId, fileName: file.name }),
+        },
+        90000,
+        "Reading the resume took too long. Try again, or upload a text-based PDF or DOCX."
+      );
+
+      let completeData: any = null;
+      try {
+        completeData = await completeRes.json();
+      } catch {
+        // Non-JSON response
+      }
+
+      if (!completeRes.ok || (completeData && completeData.error)) {
+        const msg = getErrorMessage(completeRes, completeData);
+        setErrorMessage(msg);
+        setSelectedFile(null);
+        setUploadedResumeId(null);
+        return;
+      }
+
+      const uploadData = completeData?.data;
       if (!uploadData?.resumeId) {
         setErrorMessage("Upload succeeded but no resume ID was returned.");
         setSelectedFile(null);
@@ -178,11 +360,16 @@ export default function ResumePage() {
         setUploadWarning(uploadData.warnings[0]);
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || "Network error while uploading resume.");
+      setErrorMessage(err?.message || "Failed to upload resume. Please try again.");
       setSelectedFile(null);
       setUploadedResumeId(null);
     } finally {
       setUploading(false);
+      setUploadStep("");
+      setUploadProgress(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
@@ -207,7 +394,9 @@ export default function ResumePage() {
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      handleFile(e.target.files[0]);
+      const f = e.target.files[0];
+      e.target.value = "";
+      handleFile(f);
     }
   };
 
@@ -340,7 +529,7 @@ export default function ResumePage() {
                 )}
               </div>
               <CardDescription className="text-xs">
-                Supports PDF, DOCX, JPG, PNG, WEBP, HEIC (Max 4MB)
+                Supports PDF, DOCX, JPG, PNG, WEBP, HEIC (Max 10MB)
               </CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col justify-center">
@@ -357,23 +546,47 @@ export default function ResumePage() {
                 onDragOver={handleDrag}
                 onDragLeave={handleDrag}
                 onDrop={handleDrop}
-                onClick={() => !uploading && fileInputRef.current?.click()}
+                onClick={() => !uploading && !optimizing && fileInputRef.current?.click()}
                 className={`relative border-2 border-dashed rounded-xl p-6 sm:p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
                   dragActive
                     ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 scale-[0.99]"
                     : uploadedResumeId
                     ? "border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/30 dark:bg-emerald-950/20"
                     : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30"
-                } ${uploading ? "pointer-events-none opacity-80" : ""}`}
+                } ${uploading || optimizing ? "pointer-events-none opacity-80" : ""}`}
               >
-                {uploading ? (
+                {optimizing ? (
                   <div className="space-y-3 py-4 flex flex-col items-center">
                     <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Uploading and parsing document...
+                      Optimizing image...
                     </p>
                     <p className="text-xs text-slate-400">
-                      Extracting text layers and sections
+                      Compressing photo for faster ATS scanning
+                    </p>
+                  </div>
+                ) : uploading ? (
+                  <div className="space-y-3 py-4 flex flex-col items-center">
+                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      {uploadStep === "Uploading to storage..." && uploadProgress !== null
+                        ? `Uploading to storage... ${uploadProgress}%`
+                        : uploadStep || "Uploading document..."}
+                    </p>
+                    {uploadStep === "Uploading to storage..." && uploadProgress !== null && (
+                      <div className="w-48 bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-blue-600 h-full transition-all duration-150"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-400">
+                      {uploadStep === "Preparing upload..."
+                        ? "Verifying file and preparing secure transfer"
+                        : uploadStep === "Uploading to storage..."
+                        ? "Uploading document to cloud storage"
+                        : "Scanning sections, skills, and experience"}
                     </p>
                   </div>
                 ) : uploadedResumeId && selectedFile ? (

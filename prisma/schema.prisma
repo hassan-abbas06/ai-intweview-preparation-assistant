@@ -60,6 +60,7 @@ model User {
   atsScanLogs         AtsScanLog[]
   passwordResetTokens PasswordResetToken[]
   questionHistory     QuestionHistory[]
+  jobDescriptions     JobDescription[]
 
   @@map("users")
 }
@@ -127,6 +128,8 @@ model InterviewSession {
   evaluationJobs EvaluationJob[]
   questionHistory QuestionHistory[]
   responseAnalyses ResponseAnalysis[]
+  jobDescriptionId String?         @map("job_description_id")
+  jobDescription   JobDescription? @relation(fields: [jobDescriptionId], references: [id])
 
   @@index([userId])
   @@map("interview_sessions")
@@ -372,3 +375,19 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
+
+model JobDescription {
+  id                        String   @id @default(cuid())
+  userId                    String   @map("user_id")
+  rawText                   String   @db.Text
+  extractedRole             String?  @map("extracted_role")
+  extractedSeniority        String?  @map("extracted_seniority")
+  extractedSkills           Json     @map("extracted_skills")
+  extractedResponsibilities Json     @map("extracted_responsibilities")
+  extractionConfidence      String   @default("unverified") @map("extraction_confidence")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions                  InterviewSession[]
+  @@index([userId])
+  @@map("job_descriptions")
+}

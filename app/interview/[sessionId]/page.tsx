@@ -81,6 +81,7 @@ export default function InterviewSessionPage() {
   // Dialog state
   const [showEndDialog, setShowEndDialog] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
+  const [isTerminatedForConduct, setIsTerminatedForConduct] = useState(false);
 
   // Modality & Voice Session state
   const [modality, setModality] = useState<"TEXT" | "VOICE">("TEXT");
@@ -382,7 +383,10 @@ export default function InterviewSessionPage() {
               // Auto-conclude session on frontend if AI signaled end
               if (data.isSessionEnded) {
                 setSession((prev) => (prev ? { ...prev, status: "COMPLETED" } : null));
-                const delay = modalityRef.current === "VOICE" ? 3500 : 1200;
+                if (data.isTerminatedForConduct) {
+                  setIsTerminatedForConduct(true);
+                }
+                const delay = modalityRef.current === "VOICE" ? 3000 : (data.isTerminatedForConduct ? 1800 : 600);
                 setTimeout(() => {
                   handleEndInterview();
                 }, delay);
@@ -461,29 +465,56 @@ export default function InterviewSessionPage() {
         console.log(`[Client Timing: End Interview] Session concluded on backend in ${elapsed}ms. Redirecting to report...`);
         setSession((prev) => (prev ? { ...prev, status: "COMPLETED" } : null));
         const targetReportUrl = data.reportUrl || `/interview/${sessionId}/report`;
-        router.push(targetReportUrl);
+        window.location.href = targetReportUrl;
       } else {
         console.error(`[Client Timing: End Interview] Failed after ${elapsed}ms:`, data?.message);
-        setIsEndingSession(false);
+        // Even if end endpoint failed, navigate to report if session was marked completed
+        window.location.href = `/interview/${sessionId}/report`;
       }
     } catch (err) {
       const elapsed = Math.round(performance.now() - t0);
       console.error(`[Client Timing: End Interview] Network error after ${elapsed}ms:`, err);
-      setIsEndingSession(false);
+      // Fallback navigation directly to report
+      window.location.href = `/interview/${sessionId}/report`;
     }
   };
+
+  useEffect(() => {
+    if (isEndingSession && sessionId) {
+      const fallbackTimer = setTimeout(() => {
+        window.location.href = `/interview/${sessionId}/report`;
+      }, 4000);
+      return () => clearTimeout(fallbackTimer);
+    }
+  }, [isEndingSession, sessionId]);
 
   if (isEndingSession) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-background animate-fade-in">
         <div className="max-w-md w-full p-8 rounded-2xl bg-surface border border-border text-center space-y-4 shadow-soft">
-          <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto ${isTerminatedForConduct ? "bg-error/10 text-error" : "bg-primary/10 text-primary"}`}>
+            {isTerminatedForConduct ? (
+              <AlertCircle className="w-6 h-6 text-error" />
+            ) : (
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            )}
           </div>
-          <h2 className="text-lg font-bold font-heading text-text-primary">Concluding Interview Round</h2>
+          <h2 className="text-lg font-bold font-heading text-text-primary">
+            {isTerminatedForConduct ? "Interview Terminated" : "Concluding Interview Round"}
+          </h2>
           <p className="text-xs text-text-secondary leading-relaxed">
-            Archiving your conversation transcript and loading your performance evaluation report...
+            {isTerminatedForConduct
+              ? "This session was terminated immediately due to unprofessional language. Preparing transcript and report..."
+              : "Archiving your conversation transcript and loading your performance evaluation report..."}
           </p>
+          <div className="pt-2">
+            <a
+              href={`/interview/${sessionId}/report`}
+              className="text-xs text-primary hover:underline font-medium inline-flex items-center gap-1"
+            >
+              Click here if not redirected automatically →
+            </a>
+          </div>
         </div>
       </div>
     );
@@ -547,7 +578,12 @@ export default function InterviewSessionPage() {
 
   const isCompleted = session?.status === "COMPLETED";
   const persona = session
-    ? getPersonaForInterview(session.type, session.difficulty || "INTERMEDIATE", session.domain)
+    ? getPersonaForInterview(
+        session.type,
+        session.difficulty || "INTERMEDIATE",
+        session.domain,
+        session.focusArea
+      )
     : null;
 
   return (
@@ -710,6 +746,14 @@ export default function InterviewSessionPage() {
               >
                 Dismiss
               </button>
+            </div>
+          )}
+
+          {/* Conduct Termination Banner */}
+          {isTerminatedForConduct && (
+            <div className="p-3.5 rounded-input bg-error/15 border border-error/30 text-error text-xs flex items-center gap-2.5 animate-fade-in font-medium">
+              <AlertCircle className="w-4 h-4 shrink-0 text-error" />
+              <span>Interview terminated immediately due to unprofessional language.</span>
             </div>
           )}
 

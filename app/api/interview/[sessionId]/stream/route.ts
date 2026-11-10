@@ -16,8 +16,13 @@ import {
   getDiverseFallbackQuestion,
 } from "@/lib/interview/question-diversity";
 import { getPersonaForInterview } from "@/lib/interview/personas";
+import {
+  containsVulgarOrInappropriateLanguage,
+  TERMINATION_CONDUCT_MESSAGE,
+} from "@/lib/interview/moderation";
 import { EvaluationWorker } from "@/services/evaluation-worker";
 import { ResponseAnalyzerService } from "@/services/response-analyzer";
+import { JDContext } from "@/services/interview-engine";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -50,6 +55,7 @@ export async function POST(
       where: { id: sessionId },
       include: {
         user: true,
+        jobDescription: true,
         messages: {
           orderBy: { createdAt: "asc" },
         },
@@ -81,6 +87,38 @@ export async function POST(
       );
     }
 
+    // Build JDContext if jobDescription exists and this is NOT an Aptitude session
+    let jdContext: JDContext | null = null;
+    if (interviewSession.type !== "APTITUDE" && interviewSession.jobDescription) {
+      const jd = interviewSession.jobDescription;
+
+      let skills: string[] = [];
+      if (Array.isArray(jd.extractedSkills)) {
+        skills = jd.extractedSkills.map(String).filter(Boolean);
+      } else if (typeof jd.extractedSkills === "string") {
+        try {
+          const parsed = JSON.parse(jd.extractedSkills);
+          if (Array.isArray(parsed)) skills = parsed.map(String).filter(Boolean);
+        } catch {}
+      }
+
+      let responsibilities: string[] = [];
+      if (Array.isArray(jd.extractedResponsibilities)) {
+        responsibilities = jd.extractedResponsibilities.map(String).filter(Boolean);
+      } else if (typeof jd.extractedResponsibilities === "string") {
+        try {
+          const parsed = JSON.parse(jd.extractedResponsibilities);
+          if (Array.isArray(parsed)) responsibilities = parsed.map(String).filter(Boolean);
+        } catch {}
+      }
+
+      jdContext = {
+        skills,
+        responsibilities,
+        seniority: jd.extractedSeniority || null,
+      };
+    }
+
     const llm = getLLMProvider();
     const encoder = new TextEncoder();
 
@@ -109,24 +147,39 @@ export async function POST(
       const orchestratorDecision = InterviewOrchestrator.decideNextStep({
         state: interviewState,
         isOpening: true,
+        jdContext,
       });
 
-      const systemPrompt = buildSystemPrompt({
+      let systemPrompt = buildSystemPrompt({
         state: interviewState,
         decision: orchestratorDecision,
       });
+
+      if (jdContext && jdContext.skills && jdContext.skills.length > 0) {
+        if (interviewSession.type === "MANAGERIAL") {
+          const cappedSkills = jdContext.skills.slice(0, 8).join(", ");
+          systemPrompt += `\n\nThis candidate is interviewing for an Engineering Management / Leadership role where teams work with: ${cappedSkills}. Focus strictly on engineering leadership, tech debt vs delivery tradeoffs, roadmap prioritization, team topology, hiring calibration, and people coaching. NEVER quiz the candidate on programming language syntax, data structures, coding trivia, or individual contributor implementation details.`;
+        } else if (interviewSession.type === "HR") {
+          systemPrompt += `\n\nThis candidate is in an HR / Behavioral interview. Focus strictly on behavioral STAR scenarios, interpersonal dynamics, conflict resolution, ownership, and culture fit. NEVER ask technical coding, syntax, or system design questions.`;
+        } else {
+          const cappedSkills = jdContext.skills.slice(0, 12).join(", ");
+          systemPrompt += `\n\nThis candidate is interviewing for a role involving: ${cappedSkills}. Where natural, frame scenario questions around these technologies - but do not force it if the candidate's actual answers go elsewhere.`;
+        }
+      }
+
       const openingInstruction = buildOpeningPrompt({ state: interviewState });
 
       const persona = getPersonaForInterview(
         interviewSession.type,
         interviewSession.difficulty,
-        interviewSession.domain
+        interviewSession.domain,
+        interviewSession.focusArea
       );
 
       const customStream = new ReadableStream({
         async start(controller) {
           const tStreamStart = Date.now();
-          let activeModel = "llama-3.3-70b-versatile";
+          let activeModel = "qwen/qwen3.8-27b";
           let activeProvider = "groq";
 
           try {
@@ -255,6 +308,92 @@ export async function POST(
       );
     }
 
+    // CONDUCT POLICY: Zero tolerance for vulgar, profane, or abusive language
+    if (containsVulgarOrInappropriateLanguage(candidateMessage)) {
+      console.warn(
+        `[Conduct Guardrail]: Session ${sessionId} terminated immediately due to vulgar language: "${candidateMessage.slice(0, 50)}"`
+      );
+
+      // 1. Persist the candidate's message for audit trail
+      await prisma.interviewMessage.create({
+        data: {
+          sessionId,
+          role: "user",
+          content: candidateMessage,
+        },
+      });
+
+      // 2. Mark session COMPLETED immediately
+      await prisma.interviewSession.update({
+        where: { id: sessionId },
+        data: {
+          turnCounter: { increment: 1 },
+          status: "COMPLETED",
+          completedAt: new Date(),
+        },
+      });
+
+      // 3. Persist termination response from interviewer
+      const terminationText = TERMINATION_CONDUCT_MESSAGE;
+      const savedMsg = await prisma.interviewMessage.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content: terminationText,
+        },
+      });
+
+      // 4. Stream termination tokens to candidate and conclude session
+      const customStream = new ReadableStream({
+        async start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: "meta",
+                provider: "system",
+                model: "conduct-guardrail",
+              })}\n\n`
+            )
+          );
+
+          const chunks = terminationText.match(/(\S+\s*)/g) || [terminationText];
+          for (const chunk of chunks) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "token",
+                  content: chunk,
+                })}\n\n`
+              )
+            );
+            if (process.env.NODE_ENV !== "test") {
+              await new Promise((r) => setTimeout(r, 12));
+            }
+          }
+
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: "done",
+                messageId: savedMsg.id,
+                isSessionEnded: true,
+                isTerminatedForConduct: true,
+              })}\n\n`
+            )
+          );
+          controller.close();
+        },
+      });
+
+      return new Response(customStream, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
     // Retrieve cross-session question history for this candidate
     const crossSessionHistory = await QuestionDiversityService.getCrossSessionHistory(
       interviewSession.userId,
@@ -273,12 +412,26 @@ export async function POST(
     const orchestratorDecision = InterviewOrchestrator.decideNextStep({
       state: interviewState,
       candidateMessage,
+      jdContext,
     });
 
-    const systemPrompt = buildSystemPrompt({
+    let systemPrompt = buildSystemPrompt({
       state: interviewState,
       decision: orchestratorDecision,
     });
+
+    if (jdContext && jdContext.skills && jdContext.skills.length > 0) {
+      if (interviewSession.type === "MANAGERIAL") {
+        const cappedSkills = jdContext.skills.slice(0, 8).join(", ");
+        systemPrompt += `\n\nThis candidate is interviewing for an Engineering Management / Leadership role where teams work with: ${cappedSkills}. Focus strictly on engineering leadership, tech debt vs delivery tradeoffs, roadmap prioritization, team topology, hiring calibration, and people coaching. NEVER quiz the candidate on programming language syntax, data structures, coding trivia, or individual contributor implementation details.`;
+      } else if (interviewSession.type === "HR") {
+        systemPrompt += `\n\nThis candidate is in an HR / Behavioral interview. Focus strictly on behavioral STAR scenarios, interpersonal dynamics, conflict resolution, ownership, and culture fit. NEVER ask technical coding, syntax, or system design questions.`;
+      } else {
+        const cappedSkills = jdContext.skills.slice(0, 12).join(", ");
+        systemPrompt += `\n\nThis candidate is interviewing for a role involving: ${cappedSkills}. Where natural, frame scenario questions around these technologies - but do not force it if the candidate's actual answers go elsewhere.`;
+      }
+    }
+
     const tPromptBuilt = Date.now();
 
     const pillarSlug = `PILLAR-${orchestratorDecision.targetPillarIndex}`;
@@ -378,7 +531,7 @@ export async function POST(
     const customStream = new ReadableStream({
       async start(controller) {
         const tStreamStart = Date.now();
-        let activeModel = "llama-3.3-70b-versatile";
+        let activeModel = "qwen/qwen3.8-27b";
         let activeProvider = "groq";
 
         try {
@@ -477,7 +630,9 @@ Ensure the new question tests Pillar ${orchestratorDecision.targetPillarIndex + 
                     orchestratorDecision.targetPillarIndex,
                     orchestratorDecision.targetPillarName,
                     interviewSession.domain,
-                    validation.suggestedAlternativeArchetype
+                    validation.suggestedAlternativeArchetype,
+                    interviewSession.type,
+                    interviewSession.focusArea
                   );
                 }
               } catch (retryErr) {
@@ -486,19 +641,40 @@ Ensure the new question tests Pillar ${orchestratorDecision.targetPillarIndex + 
                   orchestratorDecision.targetPillarIndex,
                   orchestratorDecision.targetPillarName,
                   interviewSession.domain,
-                  validation.suggestedAlternativeArchetype
+                  validation.suggestedAlternativeArchetype,
+                  interviewSession.type,
+                  interviewSession.focusArea
                 );
               }
             }
           }
 
           // Clean text before streaming so internal tokens like [SESSION_COMPLETED] are NEVER sent over SSE
-          const cleanAssistantText = generatedText
+          let cleanAssistantText = generatedText
             .replace(/\[SESSION_COMPLETED\]/gi, "")
             .replace(/\[SESSION_COMPLETE\]/gi, "")
             .replace(/\[SESSION_END\]/gi, "")
             .replace(/\[INTERVIEW_COMPLETED\]/gi, "")
             .trim();
+
+          // Strip robotic opener clichés and slide-style headers if produced by LLM
+          cleanAssistantText = cleanAssistantText
+            .replace(/^(?:Fair point|Fair enough|Good point|Understood|Got it|Makes sense|Right)[.,!]?\s*(?:let'?s\s+keep\s+the\s+technical\s+depth\s+light[.,!]?\s*)?/i, "")
+            .replace(/^(?:Let'?s\s+(?:shift|move|turn)\s+(?:our\s+focus\s+)?to\s+[^:]+:\s*)/i, "")
+            .replace(/^(?:Hm\s*—|Hm\s*-\s*|Ah\s*—|Ah\s*-\s*)/i, "")
+            .trim();
+
+          // If session is concluding, ensure no trailing questions survive in farewell message
+          if (isSessionEnded) {
+            cleanAssistantText = cleanAssistantText
+              .replace(/\s*(?:Do you have any questions|Let me know if you have|Would you like to|Feel free to ask)[^.!?]*\??/gi, "")
+              .replace(/\s*[^.!?]*\?\s*$/g, "")
+              .trim();
+
+            if (!cleanAssistantText) {
+              cleanAssistantText = "Thank you so much for your time today! It was great speaking with you, and best of luck with your next steps.";
+            }
+          }
 
           // Stream tokens to candidate client
           const chunks = cleanAssistantText.match(/(\S+\s*)/g) || [cleanAssistantText];

@@ -1,6 +1,12 @@
 import { InterviewType, SessionStatus, InterviewModality } from "@prisma/client";
-import { InterviewState, classifyCandidateMessage } from "@/lib/interview/state";
+import {
+  InterviewState,
+  classifyCandidateMessage,
+  isCandidateRequestingToEnd,
+  isGibberish,
+} from "@/lib/interview/state";
 import { getDomainLabel } from "@/lib/constants/domains";
+import { containsVulgarOrInappropriateLanguage, TERMINATION_CONDUCT_MESSAGE } from "@/lib/interview/moderation";
 
 export type InterviewAction =
   | "OPEN_INTERVIEW"
@@ -9,17 +15,21 @@ export type InterviewAction =
   | "PROMPT_FOR_SUBSTANCE"
   | "PIVOT_AWAY"
   | "ANSWER_CLARIFICATION"
+  | "ANSWER_TRACK_CLARIFICATION"
   | "HANDLE_META_REQUEST"
   | "DRILL_DOWN"
   | "CHALLENGE_TRADEOFF"
   | "ADVANCE_PILLAR"
-  | "CONCLUDE_ROUND";
+  | "CONCLUDE_ROUND"
+  | "TERMINATE_FOR_VULGARITY";
 
 export type DecisionReasonCode =
   | "INITIAL_OPENING"
   | "CANDIDATE_REQUESTED_END"
+  | "VULGAR_LANGUAGE_DETECTED"
   | "GREETING_DETECTED"
   | "CANDIDATE_META_INSTRUCTION"
+  | "CANDIDATE_CHALLENGED_ROUND_TYPE"
   | "CANDIDATE_ASKED_CLARIFICATION"
   | "NON_SUBSTANTIVE_REPROMPT"
   | "NON_SUBSTANTIVE_PIVOT_LIMIT"
@@ -43,11 +53,18 @@ export interface ProgressionPolicyOptions {
   adaptiveContext?: string;          // Compact adaptive guideline
 }
 
+export interface JDContext {
+  skills: string[];
+  responsibilities: string[];
+  seniority: string | null;
+}
+
 export interface OrchestratorInput {
   state: InterviewState;
   candidateMessage?: string;
   isOpening?: boolean;
   options?: ProgressionPolicyOptions;
+  jdContext?: JDContext | null;
 }
 
 export interface OrchestratorDecision {
@@ -91,6 +108,39 @@ export const TECHNICAL_PILLARS: PillarDefinition[] = [
     name: "Security, Observability, CI/CD & Best Practices",
     description: "Authentication/authorization, telemetry (distributed tracing, metrics, logs), zero-downtime deployment pipelines, and security hygiene.",
     coreConcepts: ["distributed tracing", "metrics", "OAuth/JWT", "CI/CD", "security"],
+  },
+];
+
+export const FRONTEND_PILLARS: PillarDefinition[] = [
+  {
+    index: 0,
+    name: "Component Architecture, State Management & Reactivity",
+    description: "Component composition, local vs. global vs. server state, unidirectional data flow, custom hooks, and state management (Zustand/Redux/Context).",
+    coreConcepts: ["React", "state management", "custom hooks", "component hierarchy", "props drilling", "data flow"],
+  },
+  {
+    index: 1,
+    name: "DOM Rendering, Core Web Vitals & Performance",
+    description: "Core Web Vitals (LCP, FID/INP, CLS), render cycles, memoization (useMemo/useCallback), code-splitting, lazy loading, and hydration.",
+    coreConcepts: ["Core Web Vitals", "re-renders", "memoization", "code splitting", "virtual DOM", "bundle size"],
+  },
+  {
+    index: 2,
+    name: "Asynchronous Data Fetching, Client Caching & Offline UX",
+    description: "Server state synchronization (React Query/SWR), optimistic UI updates, cache invalidation, web workers, and graceful degradation.",
+    coreConcepts: ["React Query", "caching", "optimistic updates", "data fetching", "SWR", "offline handling"],
+  },
+  {
+    index: 3,
+    name: "Responsive Layouts, Modern CSS & Accessibility (WCAG)",
+    description: "CSS Grid, Flexbox, Tailwind, responsive breakpoints, cross-browser compatibility, and accessibility standards (WCAG 2.1 AA, ARIA landmarks, keyboard navigation).",
+    coreConcepts: ["CSS Grid", "Flexbox", "responsive design", "accessibility", "WCAG", "ARIA", "Tailwind"],
+  },
+  {
+    index: 4,
+    name: "Frontend Security, Build Tooling & Rendering Paradigms",
+    description: "Cross-Site Scripting (XSS) prevention, Content Security Policy (CSP), CORS, bundling tools (Vite/Webpack), and SSR vs. SSG vs. client-side hydration.",
+    coreConcepts: ["XSS", "CSP", "SSR", "SSG", "hydration", "Vite", "build tools"],
   },
 ];
 
@@ -314,13 +364,22 @@ export const CYBERSECURITY_PILLARS: PillarDefinition[] = [
 ];
 
 /**
- * Returns the pillar definitions for a given interview round type and domain
+ * Returns the pillar definitions for a given interview round type, domain, and optional sub-focus area
  */
-export function getPillarsForRound(type: InterviewType, domain?: string | null): PillarDefinition[] {
+export function getPillarsForRound(
+  type: InterviewType,
+  domain?: string | null,
+  focusArea?: string | null
+): PillarDefinition[] {
   if (type === "HR") return HR_PILLARS;
   if (type === "MANAGERIAL") return MANAGERIAL_PILLARS;
 
   const normalizedDomain = (domain || "").toLowerCase().trim();
+  const normalizedFocus = (focusArea || "").toLowerCase().trim();
+
+  if (normalizedFocus.includes("front") || normalizedDomain.includes("front")) {
+    return FRONTEND_PILLARS;
+  }
   if (normalizedDomain.includes("finance")) {
     return FINANCE_PILLARS;
   }
@@ -351,6 +410,9 @@ export function isCandidateClarification(text: string): boolean {
     /^(could|can|would|do|are|is|should)\s+(you|we|i)\s+(clarify|specify|explain|mean|tell|give|repeat|rephrase|restate)/i,
     /^(what|which|how|where|why)\s+(do you mean|is the|are the|should i|would be|qps|traffic|scale|latency|was the question|did you say)/i,
     /^(are we assuming|is this assuming|does this mean|should this be|can you repeat|could you repeat|repeat the question)/i,
+    /^(could|can|would|may)\s+i\s+(ask|know|inquire)/i,
+    /^(i\s+have\s+a\s+question|quick\s+question|one\s+question|question\s+for\s+you)/i,
+    /^(can\s+you\s+hear\s+me|am\s+i\s+audible)/i,
     /^(pardon|excuse me|repeat please|say again|come again)/i,
   ];
 
@@ -376,6 +438,109 @@ export function isCandidateMetaInstruction(text: string): boolean {
 }
 
 /**
+ * Checks if candidate is questioning why a question is off-topic or mismatched with the round type
+ * (e.g. asking technical/coding questions in a Managerial, HR, or Finance round).
+ */
+export function isCandidateTrackClarification(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+
+  const trackPatterns = [
+    /\b(managerial|leadership|hr|behavioral|finance|accounting)\b.*\b(why|tech|technical|coding|code|programming|syntax)\b/i,
+    /\b(why|what)\b.*\b(are you|r u|u)\b.*\basking\b.*\b(tech|technical|coding|code|syntax|question)/i,
+    /\bwhy\s+(the\s+)?(tech|technical|coding|code)\s+questions?\b/i,
+    /\b(this is|isn'?t this|thought this was)\b.*\b(a\s+)?(managerial|leadership|hr|behavioral|finance|accounting)\b/i,
+    /\bwhy\s+are\s+we\s+talking\s+about\s+(coding|code|syntax|golang|go|python|java|c\+\+|javascript)\b/i,
+    /\b(i thought|i was told)\s+this\s+(is|was)\s+(a\s+)?(managerial|leadership|hr|behavioral)\b/i,
+    /\bwhy\s+would\s+you\s+ask\s+(a\s+)?(tech|technical|coding)\s+question\b/i,
+  ];
+
+  return trackPatterns.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Scores overlap between a pillar definition and extracted JD skills (case-insensitive keyword matching)
+ */
+export function scorePillarOverlap(pillar: PillarDefinition, skills: string[]): number {
+  if (!skills || skills.length === 0) return 0;
+  let score = 0;
+  const pillarText = `${pillar.name} ${pillar.description} ${pillar.coreConcepts.join(" ")}`.toLowerCase();
+
+  for (const rawSkill of skills) {
+    const s = rawSkill.trim().toLowerCase();
+    if (!s) continue;
+
+    // Direct match in pillar text
+    if (pillarText.includes(s)) {
+      score += 2;
+      continue;
+    }
+
+    // Match individual significant words from multi-word or punctuation-joined skills (e.g. "PostgreSQL" -> "sql")
+    const words = s.split(/[^a-z0-9]/).filter((w) => w.length > 2);
+    let matchedWord = false;
+    for (const w of words) {
+      if (pillarText.includes(w)) {
+        score += 1;
+        matchedWord = true;
+        break;
+      }
+    }
+    if (matchedWord) continue;
+
+    // Technology keyword associations
+    if (s.includes("kafka") && (pillarText.includes("queues") || pillarText.includes("failover") || pillarText.includes("streaming") || pillarText.includes("event"))) {
+      score += 2;
+      continue;
+    }
+    if ((s.includes("postgres") || s.includes("postgresql") || s.includes("mysql") || s.includes("mongo")) && (pillarText.includes("database") || pillarText.includes("sql") || pillarText.includes("indexing"))) {
+      score += 2;
+      continue;
+    }
+    if (s.includes("redis") && (pillarText.includes("caching") || pillarText.includes("redis"))) {
+      score += 2;
+      continue;
+    }
+  }
+
+  return score;
+}
+
+/**
+ * Returns pillars prioritized by overlap with JD skills.
+ * Ties and zero-overlap preserve the original default ordering exactly.
+ */
+export function getWeightedPillars(
+  pillars: PillarDefinition[],
+  jdContext?: JDContext | null
+): PillarDefinition[] {
+  if (!jdContext?.skills || jdContext.skills.length === 0) {
+    return [...pillars];
+  }
+
+  const scored = pillars.map((p, originalOrder) => ({
+    pillar: p,
+    originalOrder,
+    score: scorePillarOverlap(p, jdContext.skills),
+  }));
+
+  const hasOverlap = scored.some((s) => s.score > 0);
+  if (!hasOverlap) {
+    return [...pillars];
+  }
+
+  // Stable sort: higher score first; ties preserve default order
+  scored.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    return a.originalOrder - b.originalOrder;
+  });
+
+  return scored.map((s) => s.pillar);
+}
+
+/**
  * Deterministic Interview Orchestrator
  */
 export class InterviewOrchestrator {
@@ -393,13 +558,33 @@ export class InterviewOrchestrator {
   /**
    * Main deterministic decision engine for interview turn orchestration
    */
-  static decideNextStep(input: OrchestratorInput): OrchestratorDecision {
+  static decideNextStep(
+    input: OrchestratorInput,
+    extraJdContext?: JDContext | null
+  ): OrchestratorDecision {
     const { state, candidateMessage, isOpening, options } = input;
-    const pillars = getPillarsForRound(state.type, state.domain);
+    const jdContext = input.jdContext ?? extraJdContext ?? null;
+    const basePillars = getPillarsForRound(state.type, state.domain, state.focusArea);
+    const pillars = getWeightedPillars(basePillars, jdContext);
     const totalPillars = pillars.length;
 
-    // 1. Check Candidate Intent to End
-    if (state.isCandidateEnding) {
+    // 0. Check Candidate Vulgar / Abusive Conduct (Zero Tolerance - Immediate Termination)
+    if (state.isCandidateVulgar || (candidateMessage && containsVulgarOrInappropriateLanguage(candidateMessage))) {
+      return {
+        action: "TERMINATE_FOR_VULGARITY",
+        reasonCode: "VULGAR_LANGUAGE_DETECTED",
+        targetPillarIndex: totalPillars - 1,
+        targetPillarName: pillars[totalPillars - 1].name,
+        consecutiveTurnsOnPillar: 0,
+        isTerminalTurn: true,
+        directiveInstruction:
+          "The candidate used vulgar, profane, or abusive language. The interview is terminated immediately. State firmly and professionally in 1 sentence that the interview is terminated immediately due to unprofessional conduct. MANDATORY: You MUST append [SESSION_COMPLETED] at the very end. DO NOT ask any questions.",
+        groundingKeywords: ["terminated", "unprofessional language", "concluded"],
+      };
+    }
+
+    // 1. Check Candidate Intent to End (via state flag or direct message inspection)
+    if (state.isCandidateEnding || (candidateMessage && isCandidateRequestingToEnd(candidateMessage))) {
       return {
         action: "CONCLUDE_ROUND",
         reasonCode: "CANDIDATE_REQUESTED_END",
@@ -408,7 +593,7 @@ export class InterviewOrchestrator {
         consecutiveTurnsOnPillar: 0,
         isTerminalTurn: true,
         directiveInstruction:
-          "The candidate explicitly requested to end the interview. Warmly thank them for their time and technical conversation in 1-2 polite sentences. MANDATORY: You MUST append [SESSION_COMPLETED] at the very end. DO NOT ask any further questions.",
+          "The candidate explicitly requested to end or wrap up the interview (or said goodbye). Warmly thank them for their time and technical conversation in 1-2 polite sentences. MANDATORY: You MUST append [SESSION_COMPLETED] at the very end. DO NOT ask any further questions under any circumstances.",
         groundingKeywords: ["conclude", "wrap up", "thank you"],
       };
     }
@@ -432,6 +617,11 @@ export class InterviewOrchestrator {
     // 3. Check Casual Greeting
     if (state.isGreeting) {
       const currentPillar = pillars[Math.min(Math.floor(state.askedQuestions.length / 2), totalPillars - 1)];
+      const isOpeningTurn = state.askedQuestions.length <= 1;
+      const directive = isOpeningTurn
+        ? "The candidate greeted you. Warmly say hello back in 1 brief phrase, then invite them to share a bit about their background and what they've been working on recently. DO NOT pretend they already gave you their background (e.g. NEVER say 'Got a quick sense of your recent work')."
+        : "The candidate sent a casual greeting/small talk. Respond warmly in 1 short phrase (e.g. 'Hey! Good to have you here.'), then immediately continue with the SAME question you were already asking.";
+
       return {
         action: "HANDLE_GREETING",
         reasonCode: "GREETING_DETECTED",
@@ -439,8 +629,7 @@ export class InterviewOrchestrator {
         targetPillarName: currentPillar.name,
         consecutiveTurnsOnPillar: 0,
         isTerminalTurn: false,
-        directiveInstruction:
-          "The candidate sent a casual greeting/small talk. Respond warmly in 1 short phrase (e.g. 'Hey! Good to have you here.'), then immediately continue with the SAME question you were already asking.",
+        directiveInstruction: directive,
         groundingKeywords: currentPillar.coreConcepts,
       };
     }
@@ -461,9 +650,42 @@ export class InterviewOrchestrator {
       };
     }
 
-    // 5. Check Candidate Clarification Question (Strict Directive Boundary)
+    // 5. Check Candidate Track Clarification (Candidate questions why technical/off-track questions are being asked)
+    if (candidateMessage && isCandidateTrackClarification(candidateMessage)) {
+      const currentPillar = pillars[Math.min(Math.floor(state.askedQuestions.length / 2), totalPillars - 1)];
+      const trackLabel =
+        state.type === "MANAGERIAL"
+          ? "engineering leadership and organizational strategy"
+          : state.type === "HR"
+          ? "behavioral and workplace culture"
+          : state.domain || "this domain";
+
+      return {
+        action: "ANSWER_TRACK_CLARIFICATION",
+        reasonCode: "CANDIDATE_CHALLENGED_ROUND_TYPE",
+        targetPillarIndex: currentPillar.index,
+        targetPillarName: currentPillar.name,
+        consecutiveTurnsOnPillar: 0,
+        isTerminalTurn: false,
+        directiveInstruction: `The candidate rightly pointed out that this is a ${state.type} round and asked why technical/coding questions were asked.
+Acknowledge and apologize directly and gracefully in 1 brief sentence (e.g. "You're completely right — my apologies, let's keep our focus squarely on ${trackLabel}.").
+Immediately ask an authentic, realistic leadership dilemma from Pillar ${currentPillar.index + 1} (${currentPillar.name}).
+ABSOLUTE PROHIBITIONS:
+1. NEVER quiz the candidate on coding, programming language syntax, data structures, or code mechanics.
+2. NEVER frame the candidate as a junior developer or intern (e.g. NEVER say "Imagine you're the first junior dev on a team"). The candidate is interviewing as an ENGINEERING LEADER / MANAGER. Frame all scenarios from the manager/leader perspective.
+3. NEVER use canned AI clichés like "Fair point" or "Understood".`,
+        groundingKeywords: currentPillar.coreConcepts,
+      };
+    }
+
+    // 6. Check Candidate Clarification Question (Strict Directive Boundary)
     if (candidateMessage && isCandidateClarification(candidateMessage)) {
       const currentPillar = pillars[Math.min(Math.floor(state.askedQuestions.length / 2), totalPillars - 1)];
+      const isAskingToAsk = /^(can|could|would|may)\s+i\s+(ask|know)|i\s+have\s+a\s+question|quick\s+question/i.test(candidateMessage.trim());
+      const directive = isAskingToAsk
+        ? "The candidate asked if they can ask a question or wants to speak. Warmly and concisely invite them to go ahead and ask their question (e.g. 'Of course, go ahead! What's on your mind?'). Keep the floor open for their question."
+        : "The candidate asked a clarifying question regarding the scenario. Answer their question knowledgeably and concisely in 1–2 sentences, then prompt them to proceed with their proposed design.";
+
       return {
         action: "ANSWER_CLARIFICATION",
         reasonCode: "CANDIDATE_ASKED_CLARIFICATION",
@@ -471,13 +693,28 @@ export class InterviewOrchestrator {
         targetPillarName: currentPillar.name,
         consecutiveTurnsOnPillar: 0,
         isTerminalTurn: false,
-        directiveInstruction:
-          "The candidate asked a clarifying question regarding the scenario. Answer their question knowledgeably and concisely in 1–2 sentences, then prompt them to proceed with their proposed design.",
+        directiveInstruction: directive,
         groundingKeywords: currentPillar.coreConcepts,
       };
     }
 
-    // 6. Check Non-Substantive Replies (Count >= 2 -> PIVOT_AWAY, Count === 1 -> PROMPT_FOR_SUBSTANCE)
+    // 6. Check Gibberish / Incomprehensible Input
+    if (candidateMessage && isGibberish(candidateMessage)) {
+      const currentPillar = pillars[Math.min(Math.floor(state.askedQuestions.length / 2), totalPillars - 1)];
+      return {
+        action: "PROMPT_FOR_SUBSTANCE",
+        reasonCode: "NON_SUBSTANTIVE_REPROMPT",
+        targetPillarIndex: currentPillar.index,
+        targetPillarName: currentPillar.name,
+        consecutiveTurnsOnPillar: 0,
+        isTerminalTurn: false,
+        directiveInstruction:
+          "The candidate entered gibberish or an incomprehensible string ('" + candidateMessage + "'). Explicitly state in 1 polite sentence that you didn't quite catch or understand what they meant (e.g. 'Sorry, I didn't quite catch that. Could you clarify your answer, or walk me through your thoughts on the question?'). DO NOT pretend you understood it, DO NOT say 'No problem' or validate it, and DO NOT jump to an unrelated topic or ask a brand new question.",
+        groundingKeywords: currentPillar.coreConcepts,
+      };
+    }
+
+    // 7. Check Non-Substantive Replies (Count >= 2 -> PIVOT_AWAY, Count === 1 -> PROMPT_FOR_SUBSTANCE)
     if (state.nonSubstantiveCount >= 2) {
       const nextPillarIndex = Math.min(
         Math.floor((state.askedQuestions.length + 1) / 2),

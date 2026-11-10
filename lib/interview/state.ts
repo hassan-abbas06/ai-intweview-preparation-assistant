@@ -1,5 +1,6 @@
 import { InterviewType, SessionStatus, InterviewModality } from "@prisma/client";
 import { getDomainLabel } from "@/lib/constants/domains";
+import { containsVulgarOrInappropriateLanguage } from "./moderation";
 
 export const SESSION_END_TOKEN = "[SESSION_COMPLETED]";
 
@@ -37,6 +38,7 @@ export interface InterviewState {
   isGreeting: boolean;
   isIntroTurn: boolean;
   isCandidateEnding: boolean;
+  isCandidateVulgar: boolean;
 
   // Candidate Memory
   candidateMemory: CandidateMemory;
@@ -74,9 +76,11 @@ export const MINIMAL_FILLERS = new Set([
 ]);
 
 export const GREETINGS = new Set([
-  "hi", "hey", "hello", "good morning", "good afternoon", "good evening",
+  "hi", "hey", "heyy", "heyyy", "hello", "helloo", "hellooo", "hiii",
+  "good morning", "good afternoon", "good evening",
   "how are you", "how are you doing", "hows it going", "how's it going",
   "whats up", "what's up", "hey there", "hi there", "hello there", "good day",
+  "heya", "howdy", "yo", "sup",
 ]);
 
 const KNOWN_TECH_KEYWORDS = new Set([
@@ -94,22 +98,46 @@ const KNOWN_TECH_KEYWORDS = new Set([
 ]);
 
 /**
- * Checks if candidate explicitly asks to end, wrap up, or stop the interview session
+ * Checks if candidate explicitly asks to end, wrap up, or stop the interview session,
+ * or sends a farewell/goodbye.
  */
 export function isCandidateRequestingToEnd(text: string): boolean {
+  if (!text) return false;
   const normalized = text.toLowerCase().trim();
-  const endPatterns = [
-    /\b(end|stop|finish|close|conclude|wrap up|wrap-up)\b.*\b(interview|session|round|here|call|meeting)\b/,
-    /\b(let'?s|can we|i want to|i'd like to|could we|i need to)\b.*\b(wrap up|end|finish|stop|conclude)\b/,
-    /^(i'?m done|im done|i am done|that'?s all|thats all|let'?s wrap up|lets end|end interview|stop interview|finish interview)[.!]?$/,
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+
+  // 1. Direct short farewells, exit intents, goodbyes (typically short phrases under 25 words)
+  const farewellPatterns = [
+    /\b(bye+|goodbye|good\s+bye|byebye|bye\s+bye|cya|see\s+ya|see\s+you(\s+(later|soon))?|take\s+care)\b/i,
+    /\b(have\s+a\s+(good|great|nice)\s+(day|night|one|evening|weekend))\b/i,
+    /\b(gotta\s+go|have\s+to\s+go|need\s+to\s+go|gtg|have\s+to\s+leave|need\s+to\s+leave|i'?m\s+leaving|i\s+am\s+leaving)\b/i,
+    /\b(that'?s\s+(it|all)|thats\s+(it|all)|that\s+is\s+(it|all))(\s+(for\s+today|from\s+me|from\s+my\s+side|now))?\b/i,
+    /\b(i'?m\s+done|im\s+done|i\s+am\s+done|we'?re\s+done|we\s+are\s+done|i'?m\s+finished|im\s+finished)\b/i,
+    /\b(can\s+(i|we)\s+(leave|go|stop|end|finish|wrap\s*up))\b/i,
+    /\b(i\s+(want|need|have|would\s+like)\s+to\s+(leave|go|stop|end|finish|wrap\s*up))\b/i,
+    /^(quit|exit|stop|end|finish|done|bye|byee|byeee|goodbye)[.!]?$/i,
   ];
-  return endPatterns.some((pattern) => pattern.test(normalized));
+
+  if (wordCount <= 25 && farewellPatterns.some((pattern) => pattern.test(normalized))) {
+    return true;
+  }
+
+  // 2. Explicit interview termination phrases (any length)
+  const explicitEndPatterns = [
+    /\b(end|stop|finish|close|conclude|wrap\s*up|wrap-up)\b.*\b(interview|session|round|here|call|meeting|conversation)\b/i,
+    /\b(let'?s|can we|could we|i want to|i'd like to|i need to|we should)\b.*\b(wrap\s*up|end|finish|stop|conclude)\b/i,
+    /\b(no\s+more|no\s+further)\s+questions\b/i,
+    /^(i'?m done|im done|i am done|that'?s all|thats all|that is all|let'?s wrap up|lets end|end interview|stop interview|finish interview|leave interview)[.!]?$/i,
+  ];
+
+  return explicitEndPatterns.some((pattern) => pattern.test(normalized));
 }
 
 /**
  * Checks if a string appears to be meaningless gibberish / keyboard mash
  */
 export function isGibberish(text: string): boolean {
+  if (!text) return true;
   const clean = text.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (!clean || clean.length < 2) return true;
 
@@ -119,13 +147,27 @@ export function isGibberish(text: string): boolean {
   // Only digits or symbols with no words
   if (/^\d+$/.test(clean)) return true;
 
-  // Check if every word in the text has 3+ letters and zero vowels
+  // Complete absence of vowels across string (e.g. "fgdg", "f jcfh", "sdfg", "asdf")
+  // Exclude known common technical abbreviations like "sql", "k8s"
+  if (!/[aeiouy]/.test(clean)) {
+    if (!KNOWN_TECH_KEYWORDS.has(clean) && clean !== "sql" && clean !== "k8s") {
+      return true;
+    }
+  }
+
+  // Check if every word in the text has 2+ letters and zero vowels
   const words = text.toLowerCase().split(/\s+/).filter(Boolean);
   const allVowelless = words.every((w) => {
     const letters = w.replace(/[^a-z]/g, "");
-    return letters.length >= 3 && !/[aeiouy]/.test(letters);
+    return letters.length >= 2 && !/[aeiouy]/.test(letters);
   });
-  if (allVowelless) return true;
+  if (allVowelless && words.length > 0) return true;
+
+  // Keyboard walk mash patterns (e.g. "asdf", "sdfg", "dfgh", "fghj", "ghjk", "hjkl", "zxcv", "qwerty")
+  const keyboardMash = /(asdf|sdfg|dfgh|fghj|ghjk|hjkl|zxcv|xcvb|cvbn|vbnm|qwerty|werty)/i;
+  if (keyboardMash.test(clean) && !KNOWN_TECH_KEYWORDS.has(clean)) {
+    return true;
+  }
 
   return false;
 }
@@ -139,11 +181,23 @@ export function classifyCandidateMessage(
   const normalized = text.trim().toLowerCase().replace(/^[.,!?;:]+|[.,!?;:]+$/g, "");
   if (!normalized) return "NON_SUBSTANTIVE";
 
-  // Check greetings
+  // Check vulgarity / inappropriate language
+  if (containsVulgarOrInappropriateLanguage(text)) {
+    return "NON_SUBSTANTIVE";
+  }
+
+  // Check if candidate is requesting to end / saying goodbye
+  if (isCandidateRequestingToEnd(text)) {
+    return "NON_SUBSTANTIVE";
+  }
+
+  // Check greetings (including elongated greetings like "heyy", "hiii", "hellooo")
+  const elongatedGreetingRegex = /^(h+e+y+|h+i+|h+e+l+l+o+|h+e+y+a|h+o+w+d+y|y+o+|s+u+p)[.!]?$/i;
+  const multiWordGreetingRegex = /^(hi|hey|heyy|hello|greetings|good\s+(morning|afternoon|evening))\b/i;
   if (
     GREETINGS.has(normalized) ||
-    (/^(hi|hey|hello|greetings|good\s+(morning|afternoon|evening))\b/i.test(normalized) &&
-      normalized.split(/\s+/).length <= 4)
+    elongatedGreetingRegex.test(normalized) ||
+    (multiWordGreetingRegex.test(normalized) && normalized.split(/\s+/).length <= 4)
   ) {
     return "GREETING";
   }
@@ -360,13 +414,24 @@ export function buildInterviewState(
   );
 
   const isCandidateEnding = currentCandidateMessage ? isCandidateRequestingToEnd(currentCandidateMessage) : false;
+  const isCandidateVulgar = currentCandidateMessage ? containsVulgarOrInappropriateLanguage(currentCandidateMessage) : false;
   const previousSubstantiveUserMessages = allMessages.filter(
     (m) => m.role === "user" && classifyCandidateMessage(m.content) === "SUBSTANTIVE"
   );
+  const isCandidateInquiry = currentCandidateMessage
+    ? /^(can|could|would|may)\s+i\s+(ask|know)|i\s+have\s+a\s+question|quick\s+question/i.test(currentCandidateMessage.trim()) ||
+      currentCandidateMessage.trim().endsWith("?")
+    : false;
+
   const isIntroTurn =
+    !isCandidateVulgar &&
+    !isCandidateInquiry &&
+    !isCandidateEnding &&
+    !isGreeting &&
     previousSubstantiveUserMessages.length === 0 &&
     typeof currentCandidateMessage === "string" &&
-    classifyCandidateMessage(currentCandidateMessage) === "SUBSTANTIVE";
+    classifyCandidateMessage(currentCandidateMessage) === "SUBSTANTIVE" &&
+    currentCandidateMessage.trim().split(/\s+/).length >= 2;
 
   const candidateMemory = extractCandidateFacts(
     currentCandidateMessage
@@ -392,6 +457,7 @@ export function buildInterviewState(
     isGreeting,
     isIntroTurn,
     isCandidateEnding,
+    isCandidateVulgar,
     candidateMemory,
     crossSessionAskedQuestions: sessionData.crossSessionAskedQuestions || [],
     messages: allMessages,
@@ -428,13 +494,13 @@ export function getPromptMemoryContext(state: InterviewState): PromptMemoryConte
   // 2. Candidate Memory Block (facts, skills, background)
   const mem = state.candidateMemory;
   const memoryLines: string[] = [];
-  if (mem.experienceHighlights.length > 0) {
+  if (mem?.experienceHighlights && mem.experienceHighlights.length > 0) {
     memoryLines.push(`• Stated Experience: ${mem.experienceHighlights.join("; ")}`);
   }
-  if (mem.skillsAndTechnologies.length > 0) {
+  if (mem?.skillsAndTechnologies && mem.skillsAndTechnologies.length > 0) {
     memoryLines.push(`• Mentioned Technologies/Tools: ${mem.skillsAndTechnologies.join(", ")}`);
   }
-  if (mem.projectsAndArchitectures.length > 0) {
+  if (mem?.projectsAndArchitectures && mem.projectsAndArchitectures.length > 0) {
     memoryLines.push(`• Stated Projects/Concepts: ${mem.projectsAndArchitectures.join(", ")}`);
   }
 
@@ -452,7 +518,14 @@ export function getPromptMemoryContext(state: InterviewState): PromptMemoryConte
   // 4. Live Turn Directive
   let liveDirectiveBlock = `✅ LIVE TURN DIRECTIVE: SUBSTANTIVE RESPONSE\n- The candidate provided a genuine answer. Anchor to a specific detail, tool, or parameter they mentioned and probe deeper or challenge tradeoffs.`;
 
-  if (state.isCandidateEnding) {
+  if (state.isCandidateVulgar) {
+    liveDirectiveBlock = `🚨 LIVE TURN DIRECTIVE: VULGAR OR ABUSIVE LANGUAGE DETECTED
+- The candidate used vulgar, profane, or abusive language.
+- ZERO TOLERANCE: The interview is terminated immediately.
+- State firmly and professionally in 1 sentence that the interview is terminated immediately due to unprofessional conduct.
+- MANDATORY: You MUST append ${SESSION_END_TOKEN} at the very end of your response.
+- DO NOT ask any further questions.`;
+  } else if (state.isCandidateEnding) {
     liveDirectiveBlock = `🚨 LIVE TURN DIRECTIVE: CANDIDATE REQUESTED TO CONCLUDE SESSION
 - The candidate explicitly requested to end, finish, or wrap up the interview.
 - Warmly acknowledge their request, thank them for their time and technical discussion in 1-2 polite sentences.

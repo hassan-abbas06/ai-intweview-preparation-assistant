@@ -9,7 +9,7 @@ export function TypingIndicator() {
           <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.3s]" />
           <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.15s]" />
           <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" />
-          <span className="text-xs text-slate-500 dark:text-slate-400 ml-2 font-medium">Interviewer is formulating next question...</span>
+          <span className="text-xs text-slate-500 dark:text-slate-400 ml-2 font-medium">Interviewer is thinking...</span>
         </div>
       </div>
     </div>

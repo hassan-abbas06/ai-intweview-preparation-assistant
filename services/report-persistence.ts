@@ -75,7 +75,7 @@ export class ReportPersistenceService {
         if (!reconciliation.canAggregate) {
           // Actively drain pending / retrying jobs for this session
           try {
-            await EvaluationWorker.drainSession(sessionId, 6000);
+            await EvaluationWorker.drainSession(sessionId, 2000);
             reconciliation = await DeterministicReportEngine.reconcileEvaluationJobs(
               sessionId,
               prismaClient
@@ -178,7 +178,7 @@ export class ReportPersistenceService {
 
       if (reportData.status === "WAITING_FOR_EVALUATIONS") {
         try {
-          await EvaluationWorker.drainSession(sessionId, 6000);
+          await EvaluationWorker.drainSession(sessionId, 2000);
           reportData = await DeterministicReportEngine.generateDeterministicReport(
             sessionId,
             prismaClient

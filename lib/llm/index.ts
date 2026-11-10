@@ -37,6 +37,12 @@ export class FallbackLLMProvider implements LLMProvider {
           return await this.fallback.generateText(options);
         } catch (fallbackErr: any) {
           const fallbackMsg = extractLLMErrorMessage(fallbackErr);
+          if (process.env.NODE_ENV !== "production") {
+            console.error(
+              `[LLM Provider Development Fallback] Both primary and fallback failed (${primaryMsg} | ${fallbackMsg}). Serving from MockLLMProvider for local resilience.`
+            );
+            return await new MockLLMProvider().generateText(options);
+          }
           throw new Error(
             `Primary (${this.primary.name}): ${primaryMsg} | Fallback (${this.fallback.name}): ${fallbackMsg}`
           );
@@ -59,6 +65,12 @@ export class FallbackLLMProvider implements LLMProvider {
           return await this.fallback.streamText(options);
         } catch (fallbackErr: any) {
           const fallbackMsg = extractLLMErrorMessage(fallbackErr);
+          if (process.env.NODE_ENV !== "production") {
+            console.error(
+              `[LLM Provider Development Fallback] Both primary and fallback stream failed (${primaryMsg} | ${fallbackMsg}). Serving from MockLLMProvider for local resilience.`
+            );
+            return await new MockLLMProvider().streamText(options);
+          }
           throw new Error(
             `Primary (${this.primary.name}): ${primaryMsg} | Fallback (${this.fallback.name}): ${fallbackMsg}`
           );
@@ -87,11 +99,23 @@ export function getLLMProvider(): LLMProvider {
     return globalForLLM.cachedLLMProvider;
   }
 
+  const cleanKey = (val?: string): string | undefined => {
+    if (!val) return undefined;
+    const trimmed = val.trim();
+    if (
+      (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    ) {
+      return trimmed.slice(1, -1).trim() || undefined;
+    }
+    return trimmed || undefined;
+  };
+
   const preferredProvider = (process.env.LLM_PROVIDER || "auto").toLowerCase();
-  const groqKey = process.env.GROQ_API_KEY?.trim();
-  const altGroqKey = process.env.ALTERNATIVE_GROQ_API_KEY_1?.trim();
-  const geminiKey = process.env.GEMINI_API_KEY?.trim();
-  const altGeminiKey = process.env.ALTERNATIVE_GEMINI_API_KEY_1?.trim();
+  const groqKey = cleanKey(process.env.GROQ_API_KEY);
+  const altGroqKey = cleanKey(process.env.ALTERNATIVE_GROQ_API_KEY_1);
+  const geminiKey = cleanKey(process.env.GEMINI_API_KEY);
+  const altGeminiKey = cleanKey(process.env.ALTERNATIVE_GEMINI_API_KEY_1);
 
   const groqKeys: string[] = [];
   if (groqKey) groqKeys.push(groqKey);
