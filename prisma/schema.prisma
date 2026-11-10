@@ -316,6 +316,8 @@ model InterviewReport {
   updatedAt               DateTime         @updatedAt @map("updated_at")
 
   session                 InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  recommendationsStatus   String @default("PENDING") @map("recommendations_status")
+  learningRecommendations LearningRecommendation[]
 
   @@index([status])
   @@index([synthesisStatus])
@@ -390,4 +392,21 @@ model JobDescription {
   sessions                  InterviewSession[]
   @@index([userId])
   @@map("job_descriptions")
+}
+
+model LearningRecommendation {
+  id               String   @id @default(cuid())
+  reportId         String   @map("report_id")
+  skillGap         String   @map("skill_gap")
+  videoId          String   @map("video_id")
+  title            String
+  channelName      String   @map("channel_name")
+  thumbnailUrl     String   @map("thumbnail_url")
+  videoUrl         String   @map("video_url")
+  durationSeconds  Int?     @map("duration_seconds")
+  createdAt        DateTime @default(now()) @map("created_at")
+  report           InterviewReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("learning_recommendations")
 }

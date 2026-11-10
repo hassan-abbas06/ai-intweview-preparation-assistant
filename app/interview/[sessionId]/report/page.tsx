@@ -23,6 +23,7 @@ export default function InterviewReportPage() {
   const [pollAttempt, setPollAttempt] = useState(0);
 
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recsPollCountRef = useRef(0);
 
   const fetchReport = useCallback(
     async (forceGenerate: boolean = false) => {
@@ -115,6 +116,29 @@ export default function InterviewReportPage() {
       }, 4000);
 
       return () => clearTimeout(backgroundTimer);
+    }
+  }, [status, report, fetchReport]);
+
+  // Phase 6: poll rapidly while learning recommendations are still PENDING.
+  // Checks every 1s, up to 5 times (~5s max). If recommendations are not ready
+  // by then, gracefully treat as FAILED locally so the card doesn't spin forever.
+  useEffect(() => {
+    if (
+      (status === "READY" || status === "PARTIAL") &&
+      report &&
+      report.recommendationsStatus === "PENDING"
+    ) {
+      if (recsPollCountRef.current >= 5) {
+        setReport((prev) =>
+          prev ? { ...prev, recommendationsStatus: "FAILED" } : prev
+        );
+        return;
+      }
+      const recsTimer = setTimeout(() => {
+        recsPollCountRef.current += 1;
+        fetchReport();
+      }, 1000);
+      return () => clearTimeout(recsTimer);
     }
   }, [status, report, fetchReport]);
 

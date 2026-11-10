@@ -6,6 +6,7 @@ import { errorResponse } from "@/lib/api-response";
 import { ReportPersistenceService } from "@/services/report-persistence";
 import { EvaluationWorker } from "@/services/evaluation-worker";
 import { InterviewDeletionService } from "@/services/interview-deletion";
+import { generateRecommendations } from "@/services/learning-recommender";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,53 @@ export async function GET(
         ReportPersistenceService.triggerSynthesisInBackground(sessionId);
       }
 
+      // Phase 6: learning recommendations. Additive only; a failure here
+      // must never affect the report response.
+      let recommendationsStatus = reportRecord.recommendationsStatus as string;
+
+      // Ensure recommendations are being generated if currently pending
+      if (recommendationsStatus === "PENDING") {
+        generateRecommendations(reportRecord.id).catch((recErr) =>
+          console.error(`[Report API] Recommendations trigger error for ${sessionId}:`, recErr)
+        );
+      }
+
+      let recommendations: Array<{
+        skillGap: string;
+        title: string;
+        channelName: string;
+        thumbnailUrl: string;
+        videoUrl: string;
+        durationSeconds: number | null;
+      }> = [];
+      try {
+        if (recommendationsStatus === "READY") {
+          recommendations = await prisma.learningRecommendation.findMany({
+            where: { reportId: reportRecord.id },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+            select: {
+              skillGap: true,
+              title: true,
+              channelName: true,
+              thumbnailUrl: true,
+              videoUrl: true,
+              durationSeconds: true,
+            },
+          });
+        } else if (
+          recommendationsStatus === "PENDING" &&
+          Date.now() - reportRecord.createdAt.getTime() > 20 * 1000
+        ) {
+          // Stale pending report (> 20s): report as FAILED in response only
+          // so the UI doesn't hang in a perpetual loading spinner.
+          recommendationsStatus = "FAILED";
+        }
+      } catch (recErr) {
+        console.error(`[Report API] Recommendations load error for ${sessionId}:`, recErr);
+        recommendationsStatus = "FAILED";
+        recommendations = [];
+      }
+
       publicReportPayload = {
         overallScore: reportRecord.overallScore,
         overallPerformanceLevel: reportRecord.overallPerformanceLevel,
@@ -98,6 +146,8 @@ export async function GET(
         actionableTips: reportRecord.structuredTips || [],
         createdAt: reportRecord.createdAt.toISOString(),
         updatedAt: reportRecord.updatedAt.toISOString(),
+        recommendationsStatus,
+        recommendations,
       };
     }
 

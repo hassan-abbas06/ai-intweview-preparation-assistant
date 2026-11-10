@@ -31,6 +31,10 @@ import {
   Quote,
   Trash2,
 } from "lucide-react";
+import {
+  LearningRecommendationsCard,
+  LearningRecommendationItem,
+} from "@/components/report/learning-recommendations-card";
 
 export interface TrajectoryPoint {
   turnSequenceNumber: number;
@@ -95,6 +99,8 @@ export interface ReportPayload {
   strengths?: SynthesisStrengthItem[];
   weaknesses?: SynthesisWeaknessItem[];
   actionableTips?: SynthesisTipItem[];
+  recommendationsStatus?: string | null;
+  recommendations?: LearningRecommendationItem[];
   createdAt: string;
 }
 
@@ -623,6 +629,11 @@ export function ReportView({ sessionId, report, status }: ReportViewProps) {
           </CardContent>
         </Card>
       )}
+
+      <LearningRecommendationsCard
+        status={report.recommendationsStatus}
+        recommendations={report.recommendations}
+      />
 
       {/* Footer Navigation */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-border print:hidden">

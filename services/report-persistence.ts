@@ -6,6 +6,7 @@ import {
 } from "./report-generator";
 import { ReportSynthesizerService } from "./report-synthesizer";
 import { EvaluationWorker } from "./evaluation-worker";
+import { generateRecommendations } from "./learning-recommender";
 
 // ============================================================================
 // PHASE 4A-2 REPORT PERSISTENCE TYPES
@@ -225,6 +226,12 @@ export class ReportPersistenceService {
       if (finalStatus === "READY" || finalStatus === "PARTIAL") {
         setTimeout(() => {
           ReportPersistenceService.triggerSynthesisInBackground(sessionId);
+        }, 100);
+        // Phase 6: fire-and-forget learning recommendations.
+        // generateRecommendations never throws; .catch is a second safety net.
+        // Must never affect report status/scores.
+        setTimeout(() => {
+          generateRecommendations(reportId).catch(() => {});
         }, 100);
       }
 
