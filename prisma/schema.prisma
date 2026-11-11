@@ -43,16 +43,16 @@ enum AtsScanMode {
 
 // Candidate / regular user model
 model User {
-  id               String             @id @default(cuid())
-  email            String             @unique
-  passwordHash     String?            @map("password_hash")
-  googleId         String?            @unique @map("google_id")
-  role             UserRole           @default(USER)
-  twoFactorEnabled Boolean            @default(false) @map("2fa_enabled")
-  twoFactorSecret  String?            @map("2fa_secret")
+  id               String   @id @default(cuid())
+  email            String   @unique
+  passwordHash     String?  @map("password_hash")
+  googleId         String?  @unique @map("google_id")
+  role             UserRole @default(USER)
+  twoFactorEnabled Boolean  @default(false) @map("2fa_enabled")
+  twoFactorSecret  String?  @map("2fa_secret")
   domain           String?
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   loginLogs           LoginLog[]
   sessions            InterviewSession[]
@@ -61,22 +61,23 @@ model User {
   passwordResetTokens PasswordResetToken[]
   questionHistory     QuestionHistory[]
   jobDescriptions     JobDescription[]
+  codingSubmissions   CodingSubmission[]
 
   @@map("users")
 }
 
 // Fully isolated Admin model (separate auth system per Rules.md)
 model Admin {
-  id               String     @id @default(cuid())
-  email            String     @unique
-  passwordHash     String     @map("password_hash")
-  twoFactorEnabled Boolean    @default(true) @map("2fa_enabled") // Mandatory per architecture
-  twoFactorSecret  String?    @map("2fa_secret")
-  role             AdminRole  @default(ADMIN)
-  createdAt        DateTime   @default(now()) @map("created_at")
-  updatedAt        DateTime   @updatedAt @map("updated_at")
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String    @map("password_hash")
+  twoFactorEnabled Boolean   @default(true) @map("2fa_enabled") // Mandatory per architecture
+  twoFactorSecret  String?   @map("2fa_secret")
+  role             AdminRole @default(ADMIN)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  loginLogs        LoginLog[]
+  loginLogs LoginLog[]
 
   @@map("admins")
 }
@@ -87,11 +88,11 @@ model LoginLog {
   userId    String?  @map("user_id")
   adminId   String?  @map("admin_id")
   timestamp DateTime @default(now())
-  method    String   // e.g. "CREDENTIALS", "GOOGLE", "ADMIN_CREDENTIALS"
+  method    String // e.g. "CREDENTIALS", "GOOGLE", "ADMIN_CREDENTIALS"
   success   Boolean
 
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  admin     Admin?   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  user  User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([adminId])
@@ -108,28 +109,28 @@ enum EvaluationJobStatus {
 
 // Mock interview sessions
 model InterviewSession {
-  id           String             @id @default(cuid())
-  userId       String             @map("user_id")
+  id           String            @id @default(cuid())
+  userId       String            @map("user_id")
   type         InterviewType
   domain       String?
-  focusArea    String?            @map("focus_area")
-  difficulty   String?            @default("INTERMEDIATE")
+  focusArea    String?           @map("focus_area")
+  difficulty   String?           @default("INTERMEDIATE")
   score        Float?
-  masteryState Json?              @map("mastery_state")
-  turnCounter  Int                @default(0) @map("turn_counter")
-  modality     InterviewModality  @default(TEXT)
-  startedAt    DateTime           @default(now()) @map("started_at")
-  completedAt  DateTime?          @map("completed_at")
-  status       SessionStatus      @default(IN_PROGRESS)
+  masteryState Json?             @map("mastery_state")
+  turnCounter  Int               @default(0) @map("turn_counter")
+  modality     InterviewModality @default(TEXT)
+  startedAt    DateTime          @default(now()) @map("started_at")
+  completedAt  DateTime?         @map("completed_at")
+  status       SessionStatus     @default(IN_PROGRESS)
 
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  report         InterviewReport?
-  messages       InterviewMessage[]
-  evaluationJobs EvaluationJob[]
-  questionHistory QuestionHistory[]
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  report           InterviewReport?
+  messages         InterviewMessage[]
+  evaluationJobs   EvaluationJob[]
+  questionHistory  QuestionHistory[]
   responseAnalyses ResponseAnalysis[]
-  jobDescriptionId String?         @map("job_description_id")
-  jobDescription   JobDescription? @relation(fields: [jobDescriptionId], references: [id])
+  jobDescriptionId String?            @map("job_description_id")
+  jobDescription   JobDescription?    @relation(fields: [jobDescriptionId], references: [id])
 
   @@index([userId])
   @@map("interview_sessions")
@@ -157,7 +158,7 @@ model EvaluationJob {
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
 
-  session            InterviewSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, turnSequenceNumber])
   @@index([status, nextRetryAt])
@@ -169,11 +170,11 @@ model EvaluationJob {
 model InterviewMessage {
   id        String   @id @default(cuid())
   sessionId String   @map("session_id")
-  role      String   // "user" | "assistant" | "system"
+  role      String // "user" | "assistant" | "system"
   content   String   @db.Text
   createdAt DateTime @default(now()) @map("created_at")
 
-  session   InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
   @@map("interview_messages")
@@ -189,7 +190,7 @@ model QuestionHistory {
   pillarIndex    Int?     @map("pillar_index")
   pillarSlug     String?  @map("pillar_slug")
   pillarName     String?  @map("pillar_name")
-  track          String   // "HR" | "DOMAIN" | "MANAGERIAL" | "APTITUDE"
+  track          String // "HR" | "DOMAIN" | "MANAGERIAL" | "APTITUDE"
   domain         String?
   difficulty     String?
   questionType   String   @default("SCENARIO") @map("question_type") // "OPENING" | "SCENARIO" | "DRILL_DOWN" | "TRADEOFF" | "FOLLOW_UP"
@@ -214,51 +215,51 @@ enum ResponseStatus {
 
 // Observable Voice & Response Analysis (Phase 7)
 model ResponseAnalysis {
-  id                    String           @id @default(cuid())
-  sessionId             String           @map("session_id")
-  turnSequenceNumber    Int              @map("turn_sequence_number")
-  messageId             String?          @map("message_id")
-  modality              String           @default("TEXT") // "TEXT" | "VOICE"
-  responseStatus        ResponseStatus   @default(COMPLETED) @map("response_status")
+  id                 String         @id @default(cuid())
+  sessionId          String         @map("session_id")
+  turnSequenceNumber Int            @map("turn_sequence_number")
+  messageId          String?        @map("message_id")
+  modality           String         @default("TEXT") // "TEXT" | "VOICE"
+  responseStatus     ResponseStatus @default(COMPLETED) @map("response_status")
 
   // Timing Metrics (ms, null when unavailable)
-  responseLatencyMs     Int?             @map("response_latency_ms")
-  answerDurationMs      Int?             @map("answer_duration_ms")
-  totalTurnDurationMs   Int?             @map("total_turn_duration_ms")
+  responseLatencyMs   Int? @map("response_latency_ms")
+  answerDurationMs    Int? @map("answer_duration_ms")
+  totalTurnDurationMs Int? @map("total_turn_duration_ms")
 
   // Pause Metrics (Voice only, null for text)
-  pauseCount            Int?             @map("pause_count")
-  longestPauseMs        Int?             @map("longest_pause_ms")
-  averagePauseMs        Int?             @map("average_pause_ms")
-  totalPauseDurationMs  Int?             @map("total_pause_duration_ms")
-  pausesPerMinute       Float?           @map("pauses_per_minute")
-  pauseEvents           Json?            @map("pause_events")
+  pauseCount           Int?   @map("pause_count")
+  longestPauseMs       Int?   @map("longest_pause_ms")
+  averagePauseMs       Int?   @map("average_pause_ms")
+  totalPauseDurationMs Int?   @map("total_pause_duration_ms")
+  pausesPerMinute      Float? @map("pauses_per_minute")
+  pauseEvents          Json?  @map("pause_events")
 
   // Speaking Rate
-  wordCount             Int              @default(0) @map("word_count")
-  speakingDurationSec   Float?           @map("speaking_duration_sec")
-  wordsPerMinute        Float?           @map("words_per_minute")
+  wordCount           Int    @default(0) @map("word_count")
+  speakingDurationSec Float? @map("speaking_duration_sec")
+  wordsPerMinute      Float? @map("words_per_minute")
 
   // Filler Word Detection
-  fillerCount           Int              @default(0) @map("filler_count")
-  fillerRate            Float            @default(0.0) @map("filler_rate")
-  fillerWords           Json             @default("[]") @map("filler_words")
-  fillerOccurrences     Json             @default("[]") @map("filler_occurrences")
+  fillerCount       Int   @default(0) @map("filler_count")
+  fillerRate        Float @default(0.0) @map("filler_rate")
+  fillerWords       Json  @default("[]") @map("filler_words")
+  fillerOccurrences Json  @default("[]") @map("filler_occurrences")
 
   // Disfluency Indicators
-  repeatedWordCount     Int              @default(0) @map("repeated_word_count")
-  repeatedPhraseCount   Int              @default(0) @map("repeated_phrase_count")
-  falseStartCount       Int              @default(0) @map("false_start_count")
-  disfluencyOccurrences Json             @default("[]") @map("disfluency_occurrences")
+  repeatedWordCount     Int  @default(0) @map("repeated_word_count")
+  repeatedPhraseCount   Int  @default(0) @map("repeated_phrase_count")
+  falseStartCount       Int  @default(0) @map("false_start_count")
+  disfluencyOccurrences Json @default("[]") @map("disfluency_occurrences")
 
   // Communication Characteristics
-  structureAssessment   String?          @map("structure_assessment")
-  observableCharacteristics Json         @default("[]") @map("observable_characteristics")
+  structureAssessment       String? @map("structure_assessment")
+  observableCharacteristics Json    @default("[]") @map("observable_characteristics")
 
-  metadata              Json?            @map("metadata")
-  createdAt             DateTime         @default(now()) @map("created_at")
+  metadata  Json?    @map("metadata")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  session               InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, turnSequenceNumber])
   @@index([sessionId])
@@ -282,41 +283,41 @@ enum SynthesisStatus {
 
 // Evaluator report generated after an interview session
 model InterviewReport {
-  id                      String           @id @default(cuid())
-  sessionId               String           @unique @map("session_id")
-  status                  ReportStatus     @default(GENERATING)
-  overallScore            Float?           @map("overall_score")
-  overallPerformanceLevel String?          @map("overall_performance_level")
-  startingDifficulty      String?          @map("starting_difficulty")
-  finalDifficulty         String?          @map("final_difficulty")
-  difficultyTrajectory    Json?            @map("difficulty_trajectory")
+  id                      String       @id @default(cuid())
+  sessionId               String       @unique @map("session_id")
+  status                  ReportStatus @default(GENERATING)
+  overallScore            Float?       @map("overall_score")
+  overallPerformanceLevel String?      @map("overall_performance_level")
+  startingDifficulty      String?      @map("starting_difficulty")
+  finalDifficulty         String?      @map("final_difficulty")
+  difficultyTrajectory    Json?        @map("difficulty_trajectory")
   metrics                 Json?
-  pillarScores            Json?            @map("pillar_scores")
+  pillarScores            Json?        @map("pillar_scores")
   reconciliation          Json?
-  scores                  Json?            @default("{}")
-  strengths               Json?            @default("[]")
-  weaknesses              Json?            @default("[]")
-  tips                    Json?            @default("[]")
-  lastError               String?          @map("last_error") @db.Text
+  scores                  Json?        @default("{}")
+  strengths               Json?        @default("[]")
+  weaknesses              Json?        @default("[]")
+  tips                    Json?        @default("[]")
+  lastError               String?      @map("last_error") @db.Text
   metadata                Json?
 
   // Phase 4B-1: Qualitative LLM Report Synthesis
-  synthesisStatus         SynthesisStatus  @default(SYNTHESIS_PENDING) @map("synthesis_status")
-  executiveSummary        String?          @map("executive_summary") @db.Text
-  structuredStrengths     Json?            @map("structured_strengths")
-  structuredWeaknesses    Json?            @map("structured_weaknesses")
-  structuredTips          Json?            @map("structured_tips")
-  synthesisModel          String?          @map("synthesis_model")
-  synthesisPromptVersion  String?          @map("synthesis_prompt_version")
-  synthesisCreatedAt      DateTime?        @map("synthesis_created_at")
-  synthesisUpdatedAt      DateTime?        @map("synthesis_updated_at")
-  synthesisError          String?          @map("synthesis_error") @db.Text
+  synthesisStatus        SynthesisStatus @default(SYNTHESIS_PENDING) @map("synthesis_status")
+  executiveSummary       String?         @map("executive_summary") @db.Text
+  structuredStrengths    Json?           @map("structured_strengths")
+  structuredWeaknesses   Json?           @map("structured_weaknesses")
+  structuredTips         Json?           @map("structured_tips")
+  synthesisModel         String?         @map("synthesis_model")
+  synthesisPromptVersion String?         @map("synthesis_prompt_version")
+  synthesisCreatedAt     DateTime?       @map("synthesis_created_at")
+  synthesisUpdatedAt     DateTime?       @map("synthesis_updated_at")
+  synthesisError         String?         @map("synthesis_error") @db.Text
 
-  createdAt               DateTime         @default(now()) @map("created_at")
-  updatedAt               DateTime         @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  session                 InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  recommendationsStatus   String @default("PENDING") @map("recommendations_status")
+  session                 InterviewSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  recommendationsStatus   String                   @default("PENDING") @map("recommendations_status")
   learningRecommendations LearningRecommendation[]
 
   @@index([status])
@@ -326,14 +327,14 @@ model InterviewReport {
 
 // Uploaded candidate resumes
 model Resume {
-  id          String       @id @default(cuid())
-  userId      String       @map("user_id")
-  fileUrl     String       @map("file_url")
-  fileName    String       @map("file_name")
-  fileSize    Int          @map("file_size")
-  parsedData  Json?        @map("parsed_data") // Structured extraction: skills, experience, education
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  fileUrl    String   @map("file_url")
+  fileName   String   @map("file_name")
+  fileSize   Int      @map("file_size")
+  parsedData Json?    @map("parsed_data") // Structured extraction: skills, experience, education
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   atsScanLogs AtsScanLog[]
@@ -351,11 +352,11 @@ model AtsScanLog {
   jdId        String?     @map("jd_id")
   jdText      String?     @map("jd_text")
   score       Float
-  suggestions Json        // Formatting fixes, keyword gaps, phrasing improvements
+  suggestions Json // Formatting fixes, keyword gaps, phrasing improvements
   timestamp   DateTime    @default(now())
 
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  resume      Resume      @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([resumeId])
@@ -371,42 +372,76 @@ model PasswordResetToken {
   used      Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at")
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("password_reset_tokens")
 }
 
-
 model JobDescription {
-  id                        String   @id @default(cuid())
-  userId                    String   @map("user_id")
-  rawText                   String   @db.Text
-  extractedRole             String?  @map("extracted_role")
-  extractedSeniority        String?  @map("extracted_seniority")
-  extractedSkills           Json     @map("extracted_skills")
-  extractedResponsibilities Json     @map("extracted_responsibilities")
-  extractionConfidence      String   @default("unverified") @map("extraction_confidence")
-  createdAt                 DateTime @default(now()) @map("created_at")
-  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                        String             @id @default(cuid())
+  userId                    String             @map("user_id")
+  rawText                   String             @db.Text
+  extractedRole             String?            @map("extracted_role")
+  extractedSeniority        String?            @map("extracted_seniority")
+  extractedSkills           Json               @map("extracted_skills")
+  extractedResponsibilities Json               @map("extracted_responsibilities")
+  extractionConfidence      String             @default("unverified") @map("extraction_confidence")
+  createdAt                 DateTime           @default(now()) @map("created_at")
+  user                      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessions                  InterviewSession[]
+
   @@index([userId])
   @@map("job_descriptions")
 }
 
 model LearningRecommendation {
-  id               String   @id @default(cuid())
-  reportId         String   @map("report_id")
-  skillGap         String   @map("skill_gap")
-  videoId          String   @map("video_id")
-  title            String
-  channelName      String   @map("channel_name")
-  thumbnailUrl     String   @map("thumbnail_url")
-  videoUrl         String   @map("video_url")
-  durationSeconds  Int?     @map("duration_seconds")
-  createdAt        DateTime @default(now()) @map("created_at")
-  report           InterviewReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id              String          @id @default(cuid())
+  reportId        String          @map("report_id")
+  skillGap        String          @map("skill_gap")
+  videoId         String          @map("video_id")
+  title           String
+  channelName     String          @map("channel_name")
+  thumbnailUrl    String          @map("thumbnail_url")
+  videoUrl        String          @map("video_url")
+  durationSeconds Int?            @map("duration_seconds")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  report          InterviewReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@index([reportId])
   @@map("learning_recommendations")
+}
+
+model CodingProblem {
+  id          String             @id @default(cuid())
+  slug        String             @unique
+  title       String
+  difficulty  String // "easy" | "medium" | "hard"
+  tags        Json // string[], e.g. ["arrays", "two-pointers"]
+  description String             @db.Text
+  starterCode Json // { [language: string]: string }
+  sampleTests Json // TestCase[] visible to candidate
+  hiddenTests Json // TestCase[] NEVER sent to client
+  createdAt   DateTime           @default(now()) @map("created_at")
+  submissions CodingSubmission[]
+
+  @@map("coding_problems")
+}
+
+model CodingSubmission {
+  id          String        @id @default(cuid())
+  userId      String        @map("user_id")
+  problemId   String        @map("problem_id")
+  language    String
+  code        String        @db.Text
+  status      String // "PENDING" | "PASSED" | "FAILED" | "COMPILE_ERROR" | "TIME_LIMIT_EXCEEDED" | "RUNTIME_ERROR" | "PROVIDER_ERROR"
+  testResults Json
+  runtimeMs   Int?          @map("runtime_ms")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem     CodingProblem @relation(fields: [problemId], references: [id])
+
+  @@index([userId])
+  @@index([problemId])
+  @@map("coding_submissions")
 }

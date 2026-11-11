@@ -499,7 +499,6 @@ export default function UserDashboardPage() {
                   <div className="w-9 h-9 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center shrink-0">
                     <Code2 className="w-4 h-4" />
                   </div>
-                  <Badge variant="neutral">Coming Soon</Badge>
                 </div>
                 <CardTitle className="text-base mt-2">Coding Arena</CardTitle>
                 <CardDescription>
