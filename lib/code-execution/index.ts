@@ -34,6 +34,17 @@ function extractSanitizedReason(err: unknown): string {
   return "network/timeout";
 }
 
+function getExecutionProviderMode(): "judge0" | "piston" | "auto" {
+  const envMode = process.env.CODE_EXECUTION_PROVIDER?.trim().toLowerCase();
+  if (envMode === "auto") {
+    return "auto";
+  }
+  if (envMode === "piston") {
+    return "piston";
+  }
+  return "judge0";
+}
+
 class CompositeCodeExecutionProvider implements CodeExecutionProvider {
   async execute(req: ExecutionRequest): Promise<ExecutionResult> {
     const lang = req.language?.toLowerCase();
@@ -43,6 +54,29 @@ class CompositeCodeExecutionProvider implements CodeExecutionProvider {
       );
     }
 
+    const mode = getExecutionProviderMode();
+
+    if (mode === "judge0") {
+      try {
+        return await judge0Provider.execute(req);
+      } catch (judge0Err: unknown) {
+        const reason = extractSanitizedReason(judge0Err);
+        console.error(`[code-execution] Judge0 failed (${reason})`);
+        throw new CodeExecutionUnavailableError();
+      }
+    }
+
+    if (mode === "piston") {
+      try {
+        return await pistonProvider.execute(req);
+      } catch (pistonErr: unknown) {
+        const reason = extractSanitizedReason(pistonErr);
+        console.error(`[code-execution] Piston failed (${reason})`);
+        throw new CodeExecutionUnavailableError();
+      }
+    }
+
+    // mode === "auto": Piston first with Judge0 fallback
     const now = Date.now();
     const isPistonInCooldown = now < pistonCooldownUntil;
 

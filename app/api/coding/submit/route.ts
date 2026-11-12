@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     }
 
     // b. Rate limit check (shared bucket per user)
-    const rateLimit = checkRateLimit(userId);
+    const rateLimit = await checkRateLimit(userId);
     if (!rateLimit.allowed) {
       const res = errorResponse(
         "Too many requests. Please slow down and try again in a minute.",

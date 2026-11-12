@@ -23,6 +23,8 @@
     "@google/genai": "^2.23.0",
     "@prisma/client": "^5.21.1",
     "@uiw/react-codemirror": "^4.25.12",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.41.0",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",
     "clsx": "^2.1.1",
