@@ -24,6 +24,7 @@ export interface LoginActivityParams {
 export interface LoginActivityActor {
   type: "user" | "admin";
   email: string | null;
+  userId?: string;
 }
 
 export interface LoginActivityRow {
@@ -267,12 +268,15 @@ export async function getLoginActivity(
       ? (log.user?.email ?? null)
       : (log.admin?.email ?? null);
 
+    const actor: LoginActivityActor = {
+      type: actorType,
+      email: actorEmail,
+      ...(actorType === "user" && log.userId ? { userId: log.userId } : {}),
+    };
+
     return {
       id: log.id,
-      actor: {
-        type: actorType,
-        email: actorEmail,
-      },
+      actor,
       method: log.method,
       success: log.success,
       timestamp: log.timestamp.toISOString(),

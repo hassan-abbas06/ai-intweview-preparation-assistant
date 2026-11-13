@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, AlertCircle, Shield, User, Loader2 } from "lucide-react";
+import { UserDrilldownPanel } from "./user-drilldown-panel";
 
 const PAGE_SIZE = 25;
 
@@ -14,6 +15,7 @@ export function LoginActivityTable() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const fetchLogins = useCallback(async (currentPage: number) => {
     try {
@@ -44,7 +46,8 @@ export function LoginActivityTable() {
   const rows = data?.rows ?? [];
 
   return (
-    <Card className="shadow-sm">
+    <>
+      <Card className="shadow-sm">
       <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4">
         <div>
           <CardTitle className="text-base sm:text-lg flex items-center gap-2">
@@ -124,14 +127,40 @@ export function LoginActivityTable() {
                     const email = row.actor.email || "Unknown";
                     const isUser = row.actor.type === "user";
                     const isSuccess = row.success;
+                    const canDrilldown = Boolean(row.actor.userId);
 
                     return (
                       <tr
                         key={row.id}
-                        className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors"
+                        className={
+                          canDrilldown
+                            ? "hover:bg-blue-50/60 dark:hover:bg-slate-800/80 cursor-pointer transition-colors focus:outline-none focus:bg-blue-50/70 dark:focus:bg-slate-800/90 group"
+                            : "hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors"
+                        }
+                        role={canDrilldown ? "button" : undefined}
+                        tabIndex={canDrilldown ? 0 : undefined}
+                        aria-label={canDrilldown ? `View activity for ${email}` : undefined}
+                        onClick={canDrilldown ? () => setSelectedUserId(row.actor.userId!) : undefined}
+                        onKeyDown={
+                          canDrilldown
+                            ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setSelectedUserId(row.actor.userId!);
+                                }
+                              }
+                            : undefined
+                        }
                       >
                         <td className="py-3.5 px-4 sm:px-6 font-mono text-slate-900 dark:text-slate-100 font-medium">
-                          {email}
+                          {canDrilldown ? (
+                            <div className="flex items-center gap-1.5">
+                              <span>{email}</span>
+                              <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors shrink-0" />
+                            </div>
+                          ) : (
+                            email
+                          )}
                         </td>
                         <td className="py-3.5 px-4">
                           <Badge
@@ -194,5 +223,11 @@ export function LoginActivityTable() {
         </div>
       </CardContent>
     </Card>
+
+      <UserDrilldownPanel
+        userId={selectedUserId}
+        onClose={() => setSelectedUserId(null)}
+      />
+    </>
   );
 }
