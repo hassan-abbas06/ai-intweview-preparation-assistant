@@ -166,12 +166,12 @@ export function UserDrilldownPanel({ userId, onClose }: UserDrilldownPanelProps)
             <>
               {/* User Overview Profile Card */}
               <Card className="p-4 sm:p-5 bg-slate-50/80 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-800">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1.2fr_1fr_1fr] gap-4 text-xs">
                   <div>
                     <span className="text-slate-500 dark:text-slate-400 text-[11px] block uppercase font-medium">
                       Email Address
                     </span>
-                    <span className="font-semibold text-slate-900 dark:text-white font-mono break-all text-sm mt-0.5 block">
+                    <span className="font-semibold text-slate-900 dark:text-white font-mono break-words text-sm mt-0.5 block">
                       {user.email}
                     </span>
                   </div>
@@ -311,12 +311,19 @@ export function UserDrilldownPanel({ userId, onClose }: UserDrilldownPanelProps)
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                         {atsScans.map((scan) => {
                           const modeLabel = scan.mode === "job_targeted" ? "Job targeted" : "General";
+                          let scoreColor = "text-rose-600 dark:text-rose-400";
+                          if (scan.score >= 70) {
+                            scoreColor = "text-emerald-600 dark:text-emerald-400";
+                          } else if (scan.score >= 40) {
+                            scoreColor = "text-amber-600 dark:text-amber-400";
+                          }
+
                           return (
                             <tr key={scan.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
                               <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-slate-100">
                                 {modeLabel}
                               </td>
-                              <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-600 dark:text-amber-400">
+                              <td className={`py-2.5 px-3 text-right font-mono font-bold ${scoreColor}`}>
                                 {Math.round(scan.score)}/100
                               </td>
                               <td className="py-2.5 px-3 text-right font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
