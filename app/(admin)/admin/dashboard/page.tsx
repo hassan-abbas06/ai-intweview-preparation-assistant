@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ShieldAlert, LogOut, Users, Activity, BarChart3, Clock, CheckCircle2 } from "lucide-react";
+import { OverviewStatCards } from "@/components/admin/overview-stat-cards";
+import { LoginActivityTable } from "@/components/admin/login-activity-table";
+import { InterviewActivityChart } from "@/components/admin/interview-activity-chart";
+import { AtsActivityChart } from "@/components/admin/ats-activity-chart";
 
 interface AdminData {
   adminId: string;
@@ -137,6 +141,39 @@ export default function AdminDashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Analytics & Metrics Sections */}
+        {admin && (
+          <>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-white mb-4">
+                Platform Overview
+              </h2>
+              <OverviewStatCards />
+            </div>
+
+            <div>
+              <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-white mb-4">
+                Authentication & Security Activity
+              </h2>
+              <LoginActivityTable />
+            </div>
+
+            <div>
+              <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-white mb-4">
+                Interview Activity
+              </h2>
+              <InterviewActivityChart />
+            </div>
+
+            <div>
+              <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-white mb-4">
+                ATS Scan Activity
+              </h2>
+              <AtsActivityChart />
+            </div>
+          </>
+        )}
 
         {/* Analytics preview cards */}
         <div>
