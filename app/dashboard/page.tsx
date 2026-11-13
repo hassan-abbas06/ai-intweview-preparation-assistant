@@ -68,8 +68,6 @@ export default function UserDashboardPage() {
   const [clearFilter, setClearFilter] = useState<"all" | "completed">("all");
   const [isClearing, setIsClearing] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [solvedCount, setSolvedCount] = useState<number | null>(null);
-  const [totalCount, setTotalCount] = useState<number | null>(null);
 
   async function handleDeleteSession() {
     if (!sessionToDelete) return;
@@ -156,67 +154,6 @@ export default function UserDashboardPage() {
       loadHistory();
     }
   }, [session, status]);
-
-  useEffect(() => {
-    if (status !== "authenticated") return;
-    let cancelled = false;
-
-    async function loadCodingProgress() {
-      try {
-        const [progressRes, problemsRes] = await Promise.all([
-          fetch("/api/coding/progress"),
-          fetch("/api/coding/problems"),
-        ]);
-
-        if (cancelled || !progressRes.ok || !problemsRes.ok) {
-          return;
-        }
-
-        const [progressJson, problemsJson] = await Promise.all([
-          progressRes.json(),
-          problemsRes.json(),
-        ]);
-
-        if (cancelled) return;
-
-        const solvedIds = progressJson?.data?.solvedProblemIds;
-        const problems = problemsJson?.data;
-
-        if (
-          !progressJson ||
-          progressJson.error ||
-          !Array.isArray(solvedIds) ||
-          !problemsJson ||
-          problemsJson.error ||
-          !Array.isArray(problems)
-        ) {
-          return;
-        }
-
-        const solvedSet = new Set(
-          solvedIds.filter((id: unknown): id is string => typeof id === "string")
-        );
-        const count = problems.filter(
-          (p: unknown) =>
-            Boolean(p) &&
-            typeof p === "object" &&
-            typeof (p as { id?: unknown }).id === "string" &&
-            solvedSet.has((p as { id: string }).id)
-        ).length;
-
-        setSolvedCount(count);
-        setTotalCount(problems.length);
-      } catch {
-        // Leave solvedCount and totalCount as null on failure
-      }
-    }
-
-    loadCodingProgress();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [status]);
 
   if (status === "loading") {
     return (
@@ -518,7 +455,6 @@ export default function UserDashboardPage() {
                   <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
                     <Briefcase className="w-4 h-4" />
                   </div>
-                  <Badge variant="success">Available Now</Badge>
                 </div>
                 <CardTitle className="text-base mt-2">Mock Interview Engine</CardTitle>
                 <CardDescription>
@@ -540,7 +476,6 @@ export default function UserDashboardPage() {
                   <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
                     <FileText className="w-4 h-4" />
                   </div>
-                  <Badge variant="success">Available Now</Badge>
                 </div>
                 <CardTitle className="text-base mt-2">ATS Resume Scanner</CardTitle>
                 <CardDescription>
@@ -567,15 +502,10 @@ export default function UserDashboardPage() {
                 <CardDescription>
                   Monaco-powered coding sandbox with automated test case evaluation.
                 </CardDescription>
-                {solvedCount !== null && totalCount !== null && (
-                  <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-1">
-                    {solvedCount} / {totalCount} solved
-                  </p>
-                )}
               </CardHeader>
               <CardFooter className="pt-2">
                 <Link href="/coding-arena" className="w-full">
-                  <Button variant="outline" size="sm" className="w-full text-xs rounded-full">
+                  <Button variant="primary" size="sm" className="w-full text-xs rounded-full">
                     Launch Arena
                   </Button>
                 </Link>

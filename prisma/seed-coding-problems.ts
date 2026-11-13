@@ -1,4 +1,5 @@
 import { PrismaClient, Prisma } from "@prisma/client";
+import { batch1Problems } from "./coding-problems/batch1";
 
 const prisma = new PrismaClient();
 
@@ -10,7 +11,7 @@ interface TestCase {
 interface CodingProblemSeed {
   slug: string;
   title: string;
-  difficulty: "easy" | "medium";
+  difficulty: "easy" | "medium" | "hard";
   tags: string[];
   description: string;
   starterCode: {
@@ -768,10 +769,34 @@ public class Main {
   },
 ];
 
+const allProblems: CodingProblemSeed[] = [...problems, ...batch1Problems];
+
 async function main() {
+  const isDryRun = process.argv.includes("--dry-run");
+
+  if (isDryRun) {
+    console.log("🔍 [DRY RUN] Simulating seed for Coding Problems (DB will not be modified)...");
+    let existingSlugs = new Set<string>();
+    try {
+      const existing = await prisma.codingProblem.findMany({
+        select: { slug: true },
+      });
+      existingSlugs = new Set(existing.map((p) => p.slug));
+    } catch {
+      console.log("Note: Could not query existing database records; listing all candidate problems.");
+    }
+
+    for (const problem of allProblems) {
+      const action = existingSlugs.has(problem.slug) ? "UPDATE" : "CREATE";
+      console.log(`[DRY RUN] Would ${action} problem: ${problem.slug} (${problem.title}, ${problem.difficulty})`);
+    }
+    console.log(`🔍 [DRY RUN] Finished simulation. Total problems: ${allProblems.length} (${existingSlugs.size} existing, ${allProblems.length - existingSlugs.size} new).`);
+    return;
+  }
+
   console.log("🌱 Starting seed for Coding Problems...");
 
-  for (const problem of problems) {
+  for (const problem of allProblems) {
     const upserted = await prisma.codingProblem.upsert({
       where: { slug: problem.slug },
       update: {
