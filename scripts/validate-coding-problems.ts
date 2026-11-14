@@ -3,11 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { batch1Problems } from "../prisma/coding-problems/batch1";
 import { batch2Problems } from "../prisma/coding-problems/batch2";
+import { batch3Problems } from "../prisma/coding-problems/batch3";
 import { batch1References } from "../prisma/coding-problems/reference/batch1.ref";
 import { batch2References } from "../prisma/coding-problems/reference/batch2.ref";
+import { batch3References } from "../prisma/coding-problems/reference/batch3.ref";
 
-const allProblemsToValidate = [...batch1Problems, ...batch2Problems];
-const allReferences = { ...batch1References, ...batch2References };
+const allProblemsToValidate = [...batch1Problems, ...batch2Problems, ...batch3Problems];
+const allReferences = { ...batch1References, ...batch2References, ...batch3References };
 
 function getPythonCommand(): string {
   const candidates = [
@@ -98,7 +100,7 @@ const resultsTable: RowResult[] = [];
 const seenSlugs = new Set<string>();
 
 console.log("=========================================================================================");
-console.log(`Validating Coding Problems: Batch 1 + Batch 2 (${allProblemsToValidate.length} problems)...`);
+console.log(`Validating Coding Problems: Batch 1 + Batch 2 + Batch 3 (${allProblemsToValidate.length} problems)...`);
 console.log(`Python runtime: ${pythonCmd}`);
 console.log(`Node runtime:   ${process.execPath}`);
 console.log(`Javac runtime:  ${javacAvailable ? "available" : "not installed"}`);

@@ -1,6 +1,7 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { batch1Problems } from "./coding-problems/batch1";
 import { batch2Problems } from "./coding-problems/batch2";
+import { batch3Problems } from "./coding-problems/batch3";
 
 const prisma = new PrismaClient();
 
@@ -770,7 +771,7 @@ public class Main {
   },
 ];
 
-const allProblems: CodingProblemSeed[] = [...problems, ...batch1Problems, ...batch2Problems];
+const allProblems: CodingProblemSeed[] = [...problems, ...batch1Problems, ...batch2Problems, ...batch3Problems];
 
 async function main() {
   const isDryRun = process.argv.includes("--dry-run");
