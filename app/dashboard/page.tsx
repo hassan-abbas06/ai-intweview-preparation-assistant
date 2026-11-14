@@ -500,7 +500,7 @@ export default function UserDashboardPage() {
                 </div>
                 <CardTitle className="text-base mt-2">Coding Arena</CardTitle>
                 <CardDescription>
-                  Monaco-powered coding sandbox with automated test case evaluation.
+                  Write, run and submit code in Python, JavaScript or Java with instant test feedback.
                 </CardDescription>
               </CardHeader>
               <CardFooter className="pt-2">
