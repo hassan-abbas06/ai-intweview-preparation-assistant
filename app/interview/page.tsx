@@ -264,7 +264,7 @@ export default function InterviewHubPage() {
           domain: selectedTrack === "DOMAIN" ? selectedDomain : null,
           focusArea: selectedTrack === "DOMAIN" ? combinedFocus : null,
           difficulty,
-          modality,
+          modality: selectedTrack === "APTITUDE" ? "TEXT" : modality,
           ...(effectiveJdId ? { jobDescriptionId: effectiveJdId } : {}),
         }),
       });
@@ -371,78 +371,84 @@ export default function InterviewHubPage() {
           </div>
         </div>
 
-        {/* Step 2: Select Modality */}
-        <div className="space-y-3">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] flex items-center justify-center font-bold">2</span>
-            Select Interview Modality
-          </h2>
+        {/* Step 2: Select Modality (Hidden for APTITUDE) */}
+        {selectedTrack !== "APTITUDE" && (
+          <div className="space-y-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[11px] flex items-center justify-center font-bold">2</span>
+              Select Interview Modality
+            </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <button
-              type="button"
-              onClick={() => setModality("TEXT")}
-              className={`p-5 rounded-2xl border text-left flex items-start gap-4 transition-all ${
-                modality === "TEXT"
-                  ? "border-blue-500 bg-white dark:bg-slate-800 shadow-md ring-2 ring-blue-500/25"
-                  : "border-slate-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-800/60 hover:border-blue-300 hover:bg-white dark:hover:bg-slate-800"
-              }`}
-            >
-              <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${modality === "TEXT" ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20" : "bg-blue-100/70 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"}`}>
-                <MessageSquare className="w-5 h-5" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-heading font-bold text-sm text-slate-900 dark:text-white">Interactive Chat</h3>
-                  <Badge variant={modality === "TEXT" ? "primary" : "neutral"} className="text-[10px]">
-                    Text Mode
-                  </Badge>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => setModality("TEXT")}
+                className={`p-5 rounded-2xl border text-left flex items-start gap-4 transition-all ${
+                  modality === "TEXT"
+                    ? "border-blue-500 bg-white dark:bg-slate-800 shadow-md ring-2 ring-blue-500/25"
+                    : "border-slate-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-800/60 hover:border-blue-300 hover:bg-white dark:hover:bg-slate-800"
+                }`}
+              >
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${modality === "TEXT" ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20" : "bg-blue-100/70 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"}`}>
+                  <MessageSquare className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Type responses at your own pace with real-time token streaming, code formatting, and thought time.
-                </p>
-              </div>
-            </button>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading font-bold text-sm text-slate-900 dark:text-white">Interactive Chat</h3>
+                    <Badge variant={modality === "TEXT" ? "primary" : "neutral"} className="text-[10px]">
+                      Text Mode
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Type responses at your own pace with real-time token streaming, code formatting, and thought time.
+                  </p>
+                </div>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setModality("VOICE")}
-              className={`p-5 rounded-2xl border text-left flex items-start gap-4 transition-all ${
-                modality === "VOICE"
-                  ? "border-blue-500 bg-white dark:bg-slate-800 shadow-md ring-2 ring-blue-500/25"
-                  : "border-slate-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-800/60 hover:border-blue-300 hover:bg-white dark:hover:bg-slate-800"
-              }`}
-            >
-              <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${modality === "VOICE" ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20" : "bg-blue-100/70 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"}`}>
-                <Mic className="w-5 h-5" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-heading font-bold text-sm text-slate-900 dark:text-white">Live Voice Interview</h3>
-                  <Badge variant={modality === "VOICE" ? "primary" : "neutral"} className="text-[10px]">
-                    Voice Mode
-                  </Badge>
+              <button
+                type="button"
+                onClick={() => setModality("VOICE")}
+                className={`p-5 rounded-2xl border text-left flex items-start gap-4 transition-all ${
+                  modality === "VOICE"
+                    ? "border-blue-500 bg-white dark:bg-slate-800 shadow-md ring-2 ring-blue-500/25"
+                    : "border-slate-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-800/60 hover:border-blue-300 hover:bg-white dark:hover:bg-slate-800"
+                }`}
+              >
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${modality === "VOICE" ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20" : "bg-blue-100/70 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"}`}>
+                  <Mic className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Speak directly with the AI interviewer using your microphone with live speech recognition and voice playback.
-                </p>
-              </div>
-            </button>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading font-bold text-sm text-slate-900 dark:text-white">Live Voice Interview</h3>
+                    <Badge variant={modality === "VOICE" ? "primary" : "neutral"} className="text-[10px]">
+                      Voice Mode
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Speak directly with the AI interviewer using your microphone with live speech recognition and voice playback.
+                  </p>
+                </div>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Step 3: Track Options & Customization */}
+        {/* Step 3 (or Step 2 for Aptitude): Track Options & Customization */}
         <Card className="shadow-sm">
           <CardHeader>
             <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
               <Layers className="w-5 h-5" />
               <CardTitle className="text-lg">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-xs mr-2 font-bold">3</span>
-                Customize Round Parameters
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-xs mr-2 font-bold">
+                  {selectedTrack === "APTITUDE" ? "2" : "3"}
+                </span>
+                {selectedTrack === "APTITUDE" ? "Customize Assessment Parameters" : "Customize Round Parameters"}
               </CardTitle>
             </div>
             <CardDescription>
-              Tailor the difficulty, engineering stack, and focus topics for this session.
+              {selectedTrack === "APTITUDE"
+                ? "Tailor the difficulty level for your quantitative, logical, and verbal assessment."
+                : "Tailor the difficulty, engineering stack, and focus topics for this session."}
             </CardDescription>
           </CardHeader>
 
@@ -696,18 +702,23 @@ export default function InterviewHubPage() {
           <CardFooter className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-100 dark:border-slate-700/60 pt-4">
             <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-              <span>Adaptive mock interviews stream token-by-token with real-time feedback.</span>
+              <span>
+                {selectedTrack === "APTITUDE"
+                  ? "Timed aptitude tests feature real-time accuracy scoring and immediate rationale breakdowns."
+                  : "Adaptive mock interviews stream token-by-token with real-time feedback."}
+              </span>
             </div>
 
             <Button
               onClick={() => handleStartInterview(extractedJd?.jobDescriptionId || null)}
               isLoading={loading}
-              loadingText="Initializing Room..."
+              loadingText={selectedTrack === "APTITUDE" ? "Initializing Assessment..." : "Initializing Room..."}
               disabled={loading || isAnalyzingJd}
               size="lg"
               className="w-full sm:w-auto flex items-center gap-2 shadow-sm shadow-blue-500/25 font-semibold px-7"
             >
-              Start Interview Session <ArrowRight className="w-4 h-4 ml-1" />
+              {selectedTrack === "APTITUDE" ? "Start Session" : "Start Interview Session"}{" "}
+              <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           </CardFooter>
         </Card>
