@@ -7,8 +7,10 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { ShieldAlert, LogOut, Users, Activity, BarChart3, Clock, CheckCircle2 } from "lucide-react";
+import { ShieldAlert, LogOut, Clock, CheckCircle2 } from "lucide-react";
 import { OverviewStatCards } from "@/components/admin/overview-stat-cards";
+import { UserDirectoryTable } from "@/components/admin/user-directory-table";
+import { DomainDistributionChart } from "@/components/admin/domain-distribution-chart";
 import { LoginActivityTable } from "@/components/admin/login-activity-table";
 import { InterviewActivityChart } from "@/components/admin/interview-activity-chart";
 import { AtsActivityChart } from "@/components/admin/ats-activity-chart";
@@ -154,6 +156,20 @@ export default function AdminDashboardPage() {
 
             <div>
               <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-white mb-4">
+                Registered Users
+              </h2>
+              <UserDirectoryTable />
+            </div>
+
+            <div>
+              <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-white mb-4">
+                Domain Distribution
+              </h2>
+              <DomainDistributionChart />
+            </div>
+
+            <div>
+              <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-white mb-4">
                 Authentication & Security Activity
               </h2>
               <LoginActivityTable />
@@ -174,54 +190,6 @@ export default function AdminDashboardPage() {
             </div>
           </>
         )}
-
-        {/* Analytics preview cards */}
-        <div>
-          <h2 className="text-base sm:text-lg font-bold font-heading text-slate-900 dark:text-white mb-4">Management Modules</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <Card className="shadow-sm">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Users className="w-4 h-4 text-blue-600" /> User Directory
-                  </CardTitle>
-                  <Badge variant="secondary">Phase 8</Badge>
-                </div>
-                <CardDescription>
-                  View registered candidates, domains, 2FA status, and account actions.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-blue-600" /> Interview Analytics
-                  </CardTitle>
-                  <Badge variant="secondary">Phase 8</Badge>
-                </div>
-                <CardDescription>
-                  Track mock interview sessions across HR, Aptitude, Managerial, and Domain.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-blue-600" /> ATS Scan Metrics
-                  </CardTitle>
-                  <Badge variant="secondary">Phase 8</Badge>
-                </div>
-                <CardDescription>
-                  Monitor resume score distribution and job-targeted vs general scans.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
-        </div>
       </div>
     </div>
   );
