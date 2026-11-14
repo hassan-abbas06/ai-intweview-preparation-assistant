@@ -2,7 +2,12 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { batch1Problems } from "../prisma/coding-problems/batch1";
+import { batch2Problems } from "../prisma/coding-problems/batch2";
 import { batch1References } from "../prisma/coding-problems/reference/batch1.ref";
+import { batch2References } from "../prisma/coding-problems/reference/batch2.ref";
+
+const allProblemsToValidate = [...batch1Problems, ...batch2Problems];
+const allReferences = { ...batch1References, ...batch2References };
 
 function getPythonCommand(): string {
   const candidates = [
@@ -49,6 +54,35 @@ function runCode(cmd: string, args: string[], stdin: string): { status: number |
   };
 }
 
+function checkJavaEscapes(code: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const validEscapes = new Set(["b", "t", "n", "f", "r", '"', "'", "\\"]);
+
+  for (let i = 0; i < code.length; i++) {
+    if (code[i] === "\\") {
+      const nextChar = code[i + 1];
+      if (nextChar === undefined) {
+        errors.push("trailing backslash");
+        break;
+      }
+      if (nextChar === "\\") {
+        // Escaped backslash: this is valid "\\" in Java source
+        i++;
+        continue;
+      }
+      if (nextChar === "s") {
+        errors.push("contains \\s escape");
+      }
+      if (/[a-zA-Z]/.test(nextChar) && !validEscapes.has(nextChar)) {
+        errors.push(`invalid escape \\${nextChar}`);
+      }
+      i++;
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
 interface RowResult {
   slug: string;
   pythonRef: string;
@@ -64,7 +98,7 @@ const resultsTable: RowResult[] = [];
 const seenSlugs = new Set<string>();
 
 console.log("=========================================================================================");
-console.log("Validating Batch 1 Coding Problems (10 problems)...");
+console.log(`Validating Coding Problems: Batch 1 + Batch 2 (${allProblemsToValidate.length} problems)...`);
 console.log(`Python runtime: ${pythonCmd}`);
 console.log(`Node runtime:   ${process.execPath}`);
 console.log(`Javac runtime:  ${javacAvailable ? "available" : "not installed"}`);
@@ -72,8 +106,8 @@ console.log("===================================================================
 
 let anyFailure = false;
 
-for (const problem of batch1Problems) {
-  const ref = batch1References[problem.slug];
+for (const problem of allProblemsToValidate) {
+  const ref = allReferences[problem.slug];
   let pyRefOk = true;
   let pyRefDetail = "";
 
@@ -217,7 +251,16 @@ for (const problem of batch1Problems) {
     }
   }
 
-  // 5. Starter code execution check (runs without crashing)
+  // 5. Starter code execution & escape checks
+  if (problem.starterCode.java) {
+    const javaEscapeCheck = checkJavaEscapes(problem.starterCode.java);
+    if (!javaEscapeCheck.valid) {
+      starterOk = false;
+      starterDetail += `illegal Java escape (${javaEscapeCheck.errors.join(", ")}); `;
+      javaStatus = `FAIL (${javaEscapeCheck.errors[0]})`;
+    }
+  }
+
   const sample1Input = problem.sampleTests[0]?.input || "";
   const pyStarterRun = runCode(pythonCmd, ["-c", problem.starterCode.python], sample1Input);
   if (pyStarterRun.status !== 0) {
@@ -309,6 +352,6 @@ if (anyFailure) {
   console.error("❌ VALIDATION FAILED on one or more problems.");
   process.exit(1);
 } else {
-  console.log("✅ ALL 10 PROBLEMS PASSED VALIDATION!");
+  console.log(`✅ ALL ${allProblemsToValidate.length} PROBLEMS PASSED VALIDATION!`);
   process.exit(0);
 }
