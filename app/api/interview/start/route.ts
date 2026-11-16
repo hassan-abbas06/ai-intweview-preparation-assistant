@@ -5,7 +5,8 @@ import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
 import { selectAptitudeQuestions } from "@/lib/interview/aptitude-bank";
 import { QuestionDiversityService } from "@/lib/interview/question-diversity";
-import { successResponse, errorResponse } from "@/lib/api-response";
+import { successResponse, errorResponse, rateLimitResponse } from "@/lib/api-response";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { InterviewType, InterviewModality } from "@prisma/client";
 
 const StartInterviewSchema = z.object({
@@ -18,6 +19,9 @@ const StartInterviewSchema = z.object({
 });
 
 export const dynamic = "force-dynamic";
+
+const START_RATE_LIMIT = 10;
+const START_RATE_WINDOW_MS = 60_000;
 
 export async function POST(req: NextRequest) {
   const t0 = performance.now();
@@ -53,6 +57,17 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return errorResponse("Candidate account not found.", 404);
+    }
+
+    const rate = await checkRateLimit(
+      `user:${user.id}:route:interview-start`,
+      START_RATE_LIMIT,
+      START_RATE_WINDOW_MS
+    );
+    if (!rate.allowed) {
+      return rateLimitResponse(
+        "You're sending requests too quickly — please wait a moment and try again."
+      );
     }
 
     // Verify jobDescriptionId if provided

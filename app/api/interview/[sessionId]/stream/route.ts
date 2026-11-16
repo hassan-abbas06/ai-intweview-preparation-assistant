@@ -23,9 +23,14 @@ import {
 import { EvaluationWorker } from "@/services/evaluation-worker";
 import { ResponseAnalyzerService } from "@/services/response-analyzer";
 import { JDContext } from "@/services/interview-engine";
+import { rateLimitResponse } from "@/lib/api-response";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const STREAM_RATE_LIMIT = 20;
+const STREAM_RATE_WINDOW_MS = 60_000;
 
 export async function POST(
   req: NextRequest,
@@ -77,6 +82,17 @@ export async function POST(
       return new Response(
         JSON.stringify({ error: "Access to this interview session is forbidden." }),
         { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const rate = await checkRateLimit(
+      `user:${interviewSession.userId}:route:interview-stream`,
+      STREAM_RATE_LIMIT,
+      STREAM_RATE_WINDOW_MS
+    );
+    if (!rate.allowed) {
+      return rateLimitResponse(
+        "You're sending requests too quickly — please wait a moment and try again."
       );
     }
 

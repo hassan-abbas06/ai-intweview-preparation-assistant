@@ -445,3 +445,14 @@ model CodingSubmission {
   @@index([problemId])
   @@map("coding_submissions")
 }
+
+model RateLimitEntry {
+  id          String   @id @default(cuid())
+  key         String   // e.g. "user:{userId}:route:interview-stream"
+  windowStart DateTime @map("window_start")
+  count       Int      @default(1)
+
+  @@unique([key, windowStart])
+  @@map("rate_limit_entries")
+}
+

@@ -3,11 +3,15 @@ import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
-import { successResponse, errorResponse } from "@/lib/api-response";
+import { successResponse, errorResponse, rateLimitResponse } from "@/lib/api-response";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { extractJobDescription } from "@/lib/interview/jd-extractor";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const GENERATE_RATE_LIMIT = 5;
+const GENERATE_RATE_WINDOW_MS = 60_000;
 
 const GenerateQuestionsSchema = z.object({
   rawText: z
@@ -41,6 +45,17 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return errorResponse("Candidate account not found.", 404);
+    }
+
+    const rate = await checkRateLimit(
+      `user:${user.id}:route:interview-generate-questions`,
+      GENERATE_RATE_LIMIT,
+      GENERATE_RATE_WINDOW_MS
+    );
+    if (!rate.allowed) {
+      return rateLimitResponse(
+        "You're sending requests too quickly — please wait a moment and try again."
+      );
     }
 
     // 2. Validate body (Zod) -> 400 without calling LLM if invalid/empty/too long

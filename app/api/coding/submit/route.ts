@@ -4,13 +4,15 @@ import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
 import { successResponse, errorResponse } from "@/lib/api-response";
-import { checkRateLimit } from "@/lib/code-execution/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { validateCodeRequestBody } from "@/lib/code-execution/request";
 import { runAgainstTests, TestCase, TestResult } from "@/lib/code-execution/judge";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const CODING_RATE_LIMIT = 10;
+const CODING_RATE_WINDOW_MS = 60_000;
 const TIMEOUT_MS_PER_TEST = 5000;
 
 interface SanitizedSampleTestResult {
@@ -65,13 +67,21 @@ export async function POST(req: NextRequest) {
     }
 
     // b. Rate limit check (shared bucket per user)
-    const rateLimit = await checkRateLimit(userId);
+    const rateLimit = await checkRateLimit(
+      `user:${userId}:route:coding`,
+      CODING_RATE_LIMIT,
+      CODING_RATE_WINDOW_MS
+    );
     if (!rateLimit.allowed) {
       const res = errorResponse(
         "Too many requests. Please slow down and try again in a minute.",
         429
       );
-      res.headers.set("Retry-After", rateLimit.retryAfterSec.toString());
+      const retryAfterSec = Math.max(
+        1,
+        Math.ceil((CODING_RATE_WINDOW_MS - (Date.now() % CODING_RATE_WINDOW_MS)) / 1000)
+      );
+      res.headers.set("Retry-After", retryAfterSec.toString());
       return res;
     }
 

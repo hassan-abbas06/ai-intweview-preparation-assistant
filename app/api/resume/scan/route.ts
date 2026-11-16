@@ -5,6 +5,7 @@ import { Prisma, AtsScanMode } from "@prisma/client";
 import { authOptions } from "@/lib/auth/nextauth-options";
 import { prisma } from "@/lib/prisma";
 import { successResponse, errorResponse, rateLimitResponse } from "@/lib/api-response";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { scoreResume } from "@/lib/resume/ats-score";
 import { extractJdKeywordsWithFallback } from "@/lib/resume/keywords";
 import { ParsedResume } from "@/lib/resume/parse";
@@ -13,22 +14,10 @@ import { generateSuggestions } from "@/lib/resume/suggestions";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const WINDOW_MS = 60 * 60 * 1000;
-const MAX_SCANS_PER_WINDOW = 20;
-
-// Best-effort in-memory limiter. Per-instance only: replace with a shared store if traffic grows.
-const scanLog = new Map<string, number[]>();
-function allowScan(userId: string): boolean {
-  const now = Date.now();
-  const recent = (scanLog.get(userId) ?? []).filter((t) => t > now - WINDOW_MS);
-  if (recent.length >= MAX_SCANS_PER_WINDOW) {
-    scanLog.set(userId, recent);
-    return false;
-  }
-  recent.push(now);
-  scanLog.set(userId, recent);
-  return true;
-}
+const SCAN_BURST_LIMIT = 5;
+const SCAN_BURST_WINDOW_MS = 60_000;
+const SCAN_HOURLY_LIMIT = 20;
+const SCAN_HOURLY_WINDOW_MS = 3_600_000;
 
 const ScanInputSchema = z.object({
   resumeId: z.string().min(1, "resumeId is required"),
@@ -54,7 +43,22 @@ export async function POST(req: NextRequest) {
       return errorResponse("Candidate account not found.", 404);
     }
 
-    if (!allowScan(user.id)) {
+    const burst = await checkRateLimit(
+      `user:${user.id}:route:resume-scan`,
+      SCAN_BURST_LIMIT,
+      SCAN_BURST_WINDOW_MS
+    );
+    if (!burst.allowed) {
+      return rateLimitResponse(
+        "You're sending requests too quickly — please wait a moment and try again."
+      );
+    }
+    const hourly = await checkRateLimit(
+      `user:${user.id}:route:resume-scan-hourly`,
+      SCAN_HOURLY_LIMIT,
+      SCAN_HOURLY_WINDOW_MS
+    );
+    if (!hourly.allowed) {
       return rateLimitResponse("Scan limit reached (20 per hour). Please try again later.");
     }
 
