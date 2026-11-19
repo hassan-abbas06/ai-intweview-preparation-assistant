@@ -6,6 +6,7 @@ import {
   LLMStreamOptions,
   extractLLMErrorMessage,
 } from "./types";
+import { reportModelRetired } from "./model-deprecation";
 
 const GROQ_MODELS = [
   "qwen/qwen3.8-27b",
@@ -116,6 +117,7 @@ export class GroqProvider implements LLMProvider {
           if (timeoutHandle) clearTimeout(timeoutHandle);
           lastError = err;
           const msg = extractLLMErrorMessage(err);
+          reportModelRetired("Groq", model, err);
           errorsList.push(`${model} [${instance.label}]: ${msg}`);
           console.warn(
             `[LLM:Groq Fallback] Model ${model} on ${instance.label} key failed: ${msg}.`
@@ -220,6 +222,7 @@ export class GroqProvider implements LLMProvider {
           if (timeoutHandle) clearTimeout(timeoutHandle);
           lastError = err;
           const msg = extractLLMErrorMessage(err);
+          reportModelRetired("Groq", model, err);
           errorsList.push(`${model} [${instance.label}]: ${msg}`);
           console.warn(
             `[LLM:Groq Stream Fallback] Model ${model} on ${instance.label} key failed: ${msg}.`

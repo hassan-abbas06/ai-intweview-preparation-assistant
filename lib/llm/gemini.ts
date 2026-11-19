@@ -6,6 +6,7 @@ import {
   LLMStreamOptions,
   extractLLMErrorMessage,
 } from "./types";
+import { reportModelRetired } from "./model-deprecation";
 
 const GEMINI_MODELS = [
   "gemini-3.5-flash",
@@ -119,6 +120,7 @@ export class GeminiProvider implements LLMProvider {
           if (timeoutHandle) clearTimeout(timeoutHandle);
           lastError = err;
           const msg = extractLLMErrorMessage(err);
+          reportModelRetired("Gemini", model, err);
           errorsList.push(`${model} [${instance.label}]: ${msg}`);
           console.warn(
             `[LLM:Gemini Fallback] Model ${model} on ${instance.label} key failed: ${msg}.`
@@ -229,6 +231,7 @@ export class GeminiProvider implements LLMProvider {
           if (timeoutHandle) clearTimeout(timeoutHandle);
           lastError = err;
           const msg = extractLLMErrorMessage(err);
+          reportModelRetired("Gemini", model, err);
           errorsList.push(`${model} [${instance.label}]: ${msg}`);
           console.warn(
             `[LLM:Gemini Stream Fallback] Model ${model} on ${instance.label} key failed: ${msg}.`
