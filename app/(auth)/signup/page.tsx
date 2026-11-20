@@ -38,7 +38,9 @@ export default function SignupPage() {
 
     setLoading(true);
     const t0 = performance.now();
-    console.log("[Client Timing: Signup] Submitting registration form...");
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Client Timing: Signup] Submitting registration form...");
+    }
 
     try {
       const res = await fetch("/api/auth/register", {
@@ -57,7 +59,9 @@ export default function SignupPage() {
         return;
       }
 
-      console.log(`[Client Timing: Signup] Registration successful in ${elapsed}ms. Redirecting to login.`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Client Timing: Signup] Registration successful in ${elapsed}ms. Redirecting to login.`);
+      }
       // Registration successful -> redirect to login with registered flag
       router.push("/login?registered=true");
     } catch (err) {
@@ -70,7 +74,9 @@ export default function SignupPage() {
 
   const handleGoogleSignup = () => {
     const t0 = performance.now();
-    console.log("[Client Timing: Google Signup] Initiating Google registration redirect...");
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Client Timing: Google Signup] Initiating Google registration redirect...");
+    }
     setIsGoogleLoading(true);
     signIn("google", { callbackUrl: "/dashboard" });
   };

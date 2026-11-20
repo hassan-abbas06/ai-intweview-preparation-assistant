@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error("[Voice:Whisper Transcribe Error]:", err);
     return NextResponse.json(
-      { error: err?.message || "Failed to transcribe audio stream." },
+      { error: "Failed to transcribe audio stream." },
       { status: 500 }
     );
   }

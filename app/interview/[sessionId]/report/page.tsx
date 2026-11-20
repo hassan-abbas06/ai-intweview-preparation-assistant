@@ -154,6 +154,11 @@ export default function InterviewReportPage() {
           <p className="text-xs text-text-secondary leading-relaxed">
             Retrieving interview evaluation data for session {sessionId?.slice(0, 8)}...
           </p>
+          <Link href="/dashboard">
+            <Button variant="ghost" size="sm" className="text-xs text-text-secondary w-full">
+              Back to Dashboard
+            </Button>
+          </Link>
         </div>
       </div>
     );
@@ -169,8 +174,10 @@ export default function InterviewReportPage() {
           </div>
 
           <div className="space-y-2">
-            <Badge variant="neutral" className="text-xs font-mono">
-              Status: {status}
+            <Badge variant="neutral" className="text-xs">
+              {status === "WAITING_FOR_EVALUATIONS"
+                ? "Evaluating responses"
+                : "Building your report"}
             </Badge>
             <h2 className="text-xl font-bold font-heading text-text-primary">
               Processing Interview Evaluation
@@ -186,7 +193,6 @@ export default function InterviewReportPage() {
             <span className="flex items-center gap-2">
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary" /> Auto-checking status
             </span>
-            <span className="font-mono text-[11px]">Poll #{pollAttempt + 1}</span>
           </div>
 
           <div className="pt-2 flex flex-col gap-2">

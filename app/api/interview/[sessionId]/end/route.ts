@@ -70,8 +70,6 @@ export async function POST(
       sessionStatus: "COMPLETED",
       reportStatus: "PROCESSING",
       reportUrl,
-      session: updated,
-      timingMs: elapsedMs,
     };
 
     return NextResponse.json(

@@ -391,7 +391,13 @@ export default function UserDashboardPage() {
                           </div>
                         ) : isCompleted ? (
                           <div className="text-right text-xs text-slate-400">
-                            <span>Report Pending</span>
+                            <span>
+                              {item.report &&
+                              (item.report.status === "READY" ||
+                                item.report.status === "PARTIAL")
+                                ? "Not assessed"
+                                : "Report Pending"}
+                            </span>
                           </div>
                         ) : null}
 

@@ -447,7 +447,9 @@ export default function InterviewSessionPage() {
   // End interview session
   const handleEndInterview = async () => {
     const t0 = performance.now();
-    console.log(`[Client Timing: End Interview] User confirmed end interview for session ${sessionId}...`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[Client Timing: End Interview] User confirmed end interview for session ${sessionId}...`);
+    }
     voiceSessionRef.current?.stopSpeaking();
     voiceSessionRef.current?.pauseListening();
     voiceSessionRef.current?.stopListening();
@@ -462,7 +464,9 @@ export default function InterviewSessionPage() {
       const elapsed = Math.round(performance.now() - t0);
 
       if (res.ok) {
-        console.log(`[Client Timing: End Interview] Session concluded on backend in ${elapsed}ms. Redirecting to report...`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[Client Timing: End Interview] Session concluded on backend in ${elapsed}ms. Redirecting to report...`);
+        }
         setSession((prev) => (prev ? { ...prev, status: "COMPLETED" } : null));
         const targetReportUrl = data.reportUrl || `/interview/${sessionId}/report`;
         window.location.href = targetReportUrl;

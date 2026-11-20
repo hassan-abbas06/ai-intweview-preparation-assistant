@@ -29,7 +29,9 @@ export default function AdminLoginPage() {
     setError(null);
     setLoading(true);
     const t0 = performance.now();
-    console.log("[Client Timing: Admin Login] Submitting admin credentials...");
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Client Timing: Admin Login] Submitting admin credentials...");
+    }
 
     try {
       const res = await fetch("/api/admin/auth/login", {
@@ -48,7 +50,9 @@ export default function AdminLoginPage() {
         return;
       }
 
-      console.log(`[Client Timing: Admin Login] Credentials verified in ${elapsed}ms. Challenge token received.`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Client Timing: Admin Login] Credentials verified in ${elapsed}ms. Challenge token received.`);
+      }
       setChallengeToken(data.data.challengeToken);
       setStep("totp");
       setLoading(false);
@@ -66,7 +70,9 @@ export default function AdminLoginPage() {
     setError(null);
     setLoading(true);
     const t0 = performance.now();
-    console.log("[Client Timing: Admin 2FA] Submitting TOTP verification code...");
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Client Timing: Admin 2FA] Submitting TOTP verification code...");
+    }
 
     try {
       const res = await fetch("/api/admin/auth/verify-2fa", {
@@ -89,7 +95,9 @@ export default function AdminLoginPage() {
         return;
       }
 
-      console.log(`[Client Timing: Admin 2FA] 2FA verified in ${elapsed}ms. Entering privileged dashboard.`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Client Timing: Admin 2FA] 2FA verified in ${elapsed}ms. Entering privileged dashboard.`);
+      }
       // Successful verification -> redirect to privileged admin dashboard
       router.push("/admin/dashboard");
       router.refresh();

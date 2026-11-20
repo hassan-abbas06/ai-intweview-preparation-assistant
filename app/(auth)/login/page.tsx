@@ -31,7 +31,9 @@ function LoginForm() {
     setError(null);
     setLoading(true);
     const t0 = performance.now();
-    console.log(`[Client Timing: Login] Submitting ${requires2FA ? "2FA code" : "credentials"}...`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[Client Timing: Login] Submitting ${requires2FA ? "2FA code" : "credentials"}...`);
+    }
 
     try {
       // Pre-flight check: verify credentials & check if 2FA code is needed
@@ -55,7 +57,9 @@ function LoginForm() {
         return;
       }
 
-      console.log(`[Client Timing: Login] Pre-flight passed in ${tPreflight}ms.`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Client Timing: Login] Pre-flight passed in ${tPreflight}ms.`);
+      }
 
       // If user has 2FA enabled and code is not yet provided:
       if (checkData.data?.requires2FA) {
@@ -83,7 +87,9 @@ function LoginForm() {
         return;
       }
 
-      console.log(`[Client Timing: Login] Authentication successful in ${tTotal}ms. Redirecting...`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[Client Timing: Login] Authentication successful in ${tTotal}ms. Redirecting...`);
+      }
       // Successful sign in
       router.push(callbackUrl);
       router.refresh();
@@ -97,7 +103,9 @@ function LoginForm() {
 
   const handleGoogleSignIn = () => {
     const t0 = performance.now();
-    console.log("[Client Timing: Google Auth] Initiating Google sign-in redirect...");
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[Client Timing: Google Auth] Initiating Google sign-in redirect...");
+    }
     setIsGoogleLoading(true);
     signIn("google", { callbackUrl });
   };
