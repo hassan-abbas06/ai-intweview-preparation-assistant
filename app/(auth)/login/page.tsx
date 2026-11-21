@@ -112,6 +112,12 @@ function LoginForm() {
 
   return (
     <div className="w-full max-w-md">
+      <Link
+        href="/"
+        className="inline-flex items-center text-xs sm:text-sm text-text-secondary hover:text-primary transition-colors mb-4"
+      >
+        ← Back to Home
+      </Link>
       <div className="text-center mb-6">
         <Link href="/" className="inline-flex items-center gap-2 mb-3">
           <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-heading font-extrabold text-sm shadow-sm shadow-blue-500/25">

@@ -200,15 +200,17 @@ export async function POST(
 
           try {
             // Immediately dispatch stream metadata to confirm SSE transport and prevent proxy timeouts
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  type: "meta",
-                  provider: activeProvider,
-                  model: activeModel,
-                })}\n\n`
-              )
-            );
+            if (process.env.NODE_ENV !== "production") {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: "meta",
+                    provider: activeProvider,
+                    model: activeModel,
+                  })}\n\n`
+                )
+              );
+            }
 
             // Generate opening question directly from openingInstruction and persona context
             let generatedText = "";
@@ -552,15 +554,17 @@ export async function POST(
 
         try {
           // Immediately dispatch stream metadata to confirm SSE transport and prevent proxy timeouts
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "meta",
-                provider: activeProvider,
-                model: activeModel,
-              })}\n\n`
-            )
-          );
+          if (process.env.NODE_ENV !== "production") {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "meta",
+                  provider: activeProvider,
+                  model: activeModel,
+                })}\n\n`
+              )
+            );
+          }
 
           // Pre-delivery generation with hard diversity validation
           let generatedText = await llm.generateText({

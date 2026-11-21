@@ -341,7 +341,7 @@ export default function UserDashboardPage() {
                 return (
                   <Card key={item.id} className="hover:border-blue-300 dark:hover:border-blue-600 transition-colors shadow-sm p-4 sm:p-5">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="neutral" className="text-xs font-semibold">
                             {item.type}
@@ -365,7 +365,7 @@ export default function UserDashboardPage() {
                           )}
                         </div>
 
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white break-words [overflow-wrap:anywhere]">
                           <span>{item.domain || item.focusArea || "General Round"}</span>
                         </div>
 
